@@ -1,0 +1,12 @@
+# Secrets — your Anthropic API key lives here, never committed.
+Tonnage/Secrets.swift
+
+# Xcode / build
+DerivedData/
+build/
+.build/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+.swiftpm/
+.DS_Store

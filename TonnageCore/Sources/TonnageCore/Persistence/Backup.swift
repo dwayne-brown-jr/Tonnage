@@ -1,0 +1,92 @@
+import Foundation
+import SwiftData
+
+/// Codable snapshot of a logged activity (for JSON backup/restore).
+public struct ActivityPayload: Codable, Sendable, Equatable {
+    public var name: String
+    public var kind: ActivityKind
+    public var durationMinutes: Int
+    public var distanceMiles: Double?
+    public var flights: Int?
+    public var detail: String
+    public var date: Date
+
+    public init(name: String, kind: ActivityKind, durationMinutes: Int,
+                distanceMiles: Double?, flights: Int?, detail: String, date: Date) {
+        self.name = name; self.kind = kind; self.durationMinutes = durationMinutes
+        self.distanceMiles = distanceMiles; self.flights = flights; self.detail = detail; self.date = date
+    }
+}
+
+/// Full export of the user's logged data (program seed is recreated on launch, so
+/// it isn't included).
+public struct BackupData: Codable, Sendable, Equatable {
+    public var version: Int
+    public var exportedAt: Date
+    public var workouts: [WorkoutPayload]
+    public var activities: [ActivityPayload]
+
+    public init(version: Int = 1, exportedAt: Date = .now,
+                workouts: [WorkoutPayload], activities: [ActivityPayload]) {
+        self.version = version; self.exportedAt = exportedAt
+        self.workouts = workouts; self.activities = activities
+    }
+
+    private static func coder() -> (JSONEncoder, JSONDecoder) {
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        e.dateEncodingStrategy = .iso8601
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return (e, d)
+    }
+
+    public func encoded() throws -> Data { try Self.coder().0.encode(self) }
+    public static func decoded(from data: Data) -> BackupData? { try? coder().1.decode(BackupData.self, from: data) }
+}
+
+@MainActor
+public func makeBackup(workouts: [LoggedWorkout], activities: [Activity]) -> BackupData {
+    BackupData(
+        workouts: workouts.map { w in
+            WorkoutPayload(
+                blockNumber: w.blockNumber, weekNumber: w.weekNumber, sessionName: w.sessionName, dayType: w.dayType, date: w.date,
+                exercises: w.orderedExercises.map { e in
+                    WorkoutPayload.Exercise(
+                        name: e.name, isCompound: e.isCompound, isCardio: e.isCardio,
+                        prescribedSets: e.prescribedSets, repRange: e.repRange,
+                        rpeTarget: e.rpeTarget, prescriptionNotes: e.prescriptionNotes,
+                        sets: e.orderedSets.map { .init(weight: $0.weight, reps: $0.reps, rpe: $0.rpe, completed: $0.completed) }
+                    )
+                }
+            )
+        },
+        activities: activities.map {
+            ActivityPayload(name: $0.name, kind: $0.kind, durationMinutes: $0.durationMinutes,
+                            distanceMiles: $0.distanceMiles, flights: $0.flights, detail: $0.detail, date: $0.date)
+        }
+    )
+}
+
+/// Restores a backup: workouts replace any existing (week, session); activities are appended.
+@MainActor
+public func applyBackup(_ backup: BackupData, to context: ModelContext) {
+    for workout in backup.workouts { applyWorkoutPayload(workout, to: context) }
+    for a in backup.activities {
+        context.insert(Activity(name: a.name, kind: a.kind, durationMinutes: a.durationMinutes,
+                                distanceMiles: a.distanceMiles, flights: a.flights, detail: a.detail, date: a.date))
+    }
+    try? context.save()
+}
+
+/// Wipes all logged data (keeps the program). Used by Settings → Reset.
+@MainActor
+public func resetLoggedData(in context: ModelContext) {
+    if let workouts = try? context.fetch(FetchDescriptor<LoggedWorkout>()) {
+        for w in workouts { context.delete(w) }
+    }
+    if let activities = try? context.fetch(FetchDescriptor<Activity>()) {
+        for a in activities { context.delete(a) }
+    }
+    try? context.save()
+}

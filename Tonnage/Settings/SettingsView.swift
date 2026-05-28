@@ -392,9 +392,18 @@ struct SettingsView: View {
             HStack {
                 Text("Version").dsLabel()
                 Spacer()
-                Text("Block 01 · v1.0").font(DSFont.numberSm).foregroundStyle(Color.textSecondary)
+                Text(Self.versionString).font(DSFont.numberSm).foregroundStyle(Color.textSecondary)
             }
         }
+    }
+
+    /// Read from the bundle so the About row always tracks the archived build —
+    /// no hand-edits when CFBundleShortVersionString / CFBundleVersion change.
+    private static var versionString: String {
+        let info = Bundle.main.infoDictionary
+        let v = (info?["CFBundleShortVersionString"] as? String) ?? "—"
+        let b = (info?["CFBundleVersion"] as? String) ?? "—"
+        return "Block 01 · v\(v) (\(b))"
     }
 
     private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {

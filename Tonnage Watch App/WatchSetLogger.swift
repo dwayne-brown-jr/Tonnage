@@ -25,14 +25,21 @@ struct WatchSetLogger: View {
                     .font(.system(.caption2, weight: .bold))
                     .foregroundStyle(.secondary)
 
-                // Weight — Digital Crown
-                Text("\(Int(weight))")
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.accent)
-                    .focusable()
-                    .focused($crownFocused)
-                    .digitalCrownRotation($weight, from: 0, through: 700, by: 5,
-                                          sensitivity: .low, isContinuous: false)
+                // Weight — tappable −/+ (step by 5 lb), with the Digital Crown as a
+                // power-user shortcut. Without the buttons, sweaty fingers or a quick
+                // glance had no obvious way to adjust weight at all.
+                HStack(spacing: DS.Spacing.md) {
+                    crownButton("minus") { weight = max(0, weight - 5) }
+                    Text("\(Int(weight))")
+                        .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(Color.accent)
+                        .focusable()
+                        .focused($crownFocused)
+                        .digitalCrownRotation($weight, from: 0, through: 700, by: 5,
+                                              sensitivity: .low, isContinuous: false)
+                        .frame(minWidth: 80)
+                    crownButton("plus") { weight += 5 }
+                }
                 Text("LB").font(.system(.caption2, weight: .semibold)).foregroundStyle(.secondary)
 
                 // Reps — steppers
@@ -55,7 +62,16 @@ struct WatchSetLogger: View {
         }
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { crownFocused = true; load() }
+        .onAppear {
+            // Resume at the next set that hasn't been logged (on the phone OR the watch).
+            // Without this we'd default to set 1 and a "Log Set" tap would silently
+            // overwrite already-completed work. If every set is done, sit on the last
+            // one so a correction is still possible.
+            setIndex = exercise.sets.firstIndex(where: { !$0.completed })
+                ?? max(0, exercise.sets.count - 1)
+            crownFocused = true
+            load()
+        }
     }
 
     private func crownButton(_ symbol: String, action: @escaping () -> Void) -> some View {

@@ -279,7 +279,12 @@ final class HealthKitManager {
         ]
         var secs: [Date: Double] = [:]
         for s in samples where asleep.contains(s.value) {
-            let day = cal.startOfDay(for: s.endDate)   // attribute to the wake-up day
+            // Attribute to the wake-up day. Apple Watch records a single night as many
+            // stage samples — some end before midnight, some after. Bucketing by raw
+            // `startOfDay(endDate)` splits one night across two calendar days. Shifting
+            // by +6h re-anchors the "day" at 18:00 so the whole night lands on the day
+            // it ended, and afternoon naps still attribute to the same day.
+            let day = cal.startOfDay(for: s.endDate.addingTimeInterval(6 * 3600))
             secs[day, default: 0] += s.endDate.timeIntervalSince(s.startDate)
         }
         return secs.keys.sorted().map { DatedValue(date: $0, value: secs[$0]! / 3600) }

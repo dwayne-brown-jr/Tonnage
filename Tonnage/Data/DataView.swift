@@ -3,9 +3,11 @@ import SwiftData
 import Charts
 import TonnageCore
 
-/// DATA: block summary, weekly volume, and per-exercise top-set progression.
+/// DATA: block summary, adherence + PR feed, weekly volume, and per-exercise top-set
+/// progression. PRs span all blocks (lifetime); everything else is block-scoped.
 struct DataView: View {
     @Query(sort: \LoggedWorkout.weekNumber) private var workouts: [LoggedWorkout]
+    @Query(sort: \Program.createdAt) private var programs: [Program]
     @Environment(HealthKitManager.self) private var health
     @AppStorage("currentBlock") private var currentBlock = 1
 
@@ -19,6 +21,14 @@ struct DataView: View {
     private var volume: [Analytics.WeekVolume] { Analytics.weeklyVolume(scoped) }
     private var hasData: Bool { Analytics.totalSets(scoped) > 0 }
 
+    private var sessionsPerWeek: Int { programs.first?.orderedSessions.count ?? 0 }
+    private var adherence: BlockAdherence {
+        AdherenceEngine.computeBlock(workouts: workouts, blockNumber: currentBlock,
+                                     sessionsPerWeek: sessionsPerWeek)
+    }
+    /// PRs are tracked across the whole training history, not just the current block.
+    private var recentPRs: [PRMoment] { PersonalRecords.recentPRs(in: workouts, limit: 5) }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -27,6 +37,8 @@ struct DataView: View {
                     if hasData {
                         VStack(spacing: DS.Spacing.lg) {
                             summary
+                            if sessionsPerWeek > 0 { adherenceCard }
+                            if !recentPRs.isEmpty { prsCard }
                             volumeCard
                             progressionCard
                             bodyweightCard
@@ -93,6 +105,105 @@ struct DataView: View {
     }
 
     private var divider: some View { Rectangle().fill(Color.hairline).frame(width: DS.Stroke.hairline, height: 32) }
+
+    // MARK: Adherence
+
+    private var adherenceCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Adherence").dsLabel()
+                Spacer()
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(adherence.sessionsCompleted)")
+                        .font(DSFont.number).monospacedDigit().foregroundStyle(Color.accent)
+                    Text("/ \(adherence.sessionsPlanned)")
+                        .font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textTertiary)
+                }
+            }
+            progressBar(pct: adherence.completionPct)
+            HStack(spacing: DS.Spacing.xs) {
+                Text("\(adherence.trainingDays)")
+                    .font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textSecondary)
+                Text("days lifted this block")
+                    .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                Spacer(minLength: 0)
+                Text("\(Int((adherence.completionPct * 100).rounded()))%")
+                    .font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textPrimary)
+            }
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+    }
+
+    private func progressBar(pct: Double) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.surfaceElevated2)
+                Capsule().fill(Color.accent)
+                    .frame(width: max(0, geo.size.width * min(1, max(0, pct))))
+            }
+        }
+        .frame(height: 6)
+    }
+
+    // MARK: PR moments
+
+    private var prsCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("PR Moments").dsLabel()
+                Spacer()
+                Text("lifetime").font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(recentPRs.enumerated()), id: \.element.id) { i, pr in
+                    prRow(pr)
+                    if i < recentPRs.count - 1 {
+                        Rectangle().fill(Color.hairline).frame(height: DS.Stroke.hairline)
+                    }
+                }
+            }
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+    }
+
+    private func prRow(_ pr: PRMoment) -> some View {
+        HStack(alignment: .center, spacing: DS.Spacing.md) {
+            Image(systemName: "arrow.up.right.circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Color.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pr.exerciseName)
+                    .font(.system(.subheadline, weight: .bold))
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                HStack(spacing: DS.Spacing.xs) {
+                    Text("\(CoachEngine.fmt(pr.weight)) × \(pr.reps)")
+                        .font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textSecondary)
+                    Text("·").font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                    Text("e1RM \(CoachEngine.fmt(pr.estimatedOneRM.rounded()))")
+                        .font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.accent)
+                }
+            }
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("W\(pr.weekNumber)")
+                    .font(.system(.caption2, weight: .bold))
+                    .foregroundStyle(Color.textTertiary)
+                Text(pr.date.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+            }
+        }
+        .padding(.vertical, DS.Spacing.sm)
+    }
 
     // MARK: Weekly volume
 

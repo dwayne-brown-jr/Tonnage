@@ -23,6 +23,7 @@ struct TrainView: View {
     @State private var sessionSaved = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
     @State private var showRecovery = false
+    @State private var showPlanBlock = false
 
     private var program: Program? { programs.first }
     private var sessions: [SessionTemplate] { program?.orderedSessions ?? [] }
@@ -77,6 +78,9 @@ struct TrainView: View {
         }
         .onDisappear { store.pruneIfEmpty(store.workout) }
         .sheet(isPresented: $showRecovery) { RecoveryView() }
+        .sheet(isPresented: $showPlanBlock) {
+            PlanBlockSheet(currentBlockNumber: currentBlock) { startNewBlock() }
+        }
     }
 
     private func startNewBlock() {
@@ -181,8 +185,12 @@ struct TrainView: View {
                 }
             }
             Divider()
+            Button { showPlanBlock = true } label: {
+                Label("Plan Block \(String(format: "%02d", currentBlock + 1)) (Coach)",
+                      systemImage: "brain.head.profile")
+            }
             Button { startNewBlock() } label: {
-                Label("Start New Block", systemImage: "plus.circle")
+                Label("Start Empty Block", systemImage: "plus.circle")
             }
         } label: {
             HStack(spacing: 3) {

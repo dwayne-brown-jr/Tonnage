@@ -18,6 +18,11 @@ final class CoachViewModel {
 
     var hasKey: Bool { CoachKey.hasKey }
 
+    /// How many trailing messages of the transcript we actually send to the API. The full
+    /// conversation is persisted for display, but re-sending all of it every turn would
+    /// grow input tokens (and cost) without bound — so we bound the wire payload here.
+    private static let historyWindow = 20
+
     /// Attach the store and load any saved conversation. Safe to call repeatedly.
     func configure(_ context: ModelContext) {
         guard self.context == nil else { return }
@@ -32,6 +37,13 @@ final class CoachViewModel {
             errorText = CoachError.missingKey.errorDescription
             return
         }
+        // Testers on the shared bundled key get a daily cap so one person can't run up an
+        // unbounded bill. Checked before we append, so a blocked send leaves no orphan
+        // user bubble. Users with their own key are never limited.
+        guard SharedKeyQuota.hasRemaining else {
+            errorText = SharedKeyQuota.limitMessage
+            return
+        }
 
         errorText = nil
         append(CoachMessage(role: .user, text: trimmed))
@@ -40,11 +52,20 @@ final class CoachViewModel {
 
         do {
             let reply = try await AnthropicClient(apiKey: key)
-                .send(system: system, history: messages, model: model, maxTokens: model == .opus ? 1800 : 1024)
+                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024)
             append(CoachMessage(role: .assistant, text: reply))
+            SharedKeyQuota.recordUse()
         } catch {
             errorText = (error as? CoachError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    /// Trailing window of the transcript, trimmed so it begins on a user message — the
+    /// Messages API requires the first entry in `messages` to be from the user.
+    private func windowed(_ all: [CoachMessage]) -> [CoachMessage] {
+        var window = Array(all.suffix(Self.historyWindow))
+        while let first = window.first, first.role != .user { window.removeFirst() }
+        return window
     }
 
     func clear() {

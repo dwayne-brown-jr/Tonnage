@@ -211,9 +211,7 @@ private struct MessageBubble: View {
     var body: some View {
         HStack {
             if isUser { Spacer(minLength: DS.Spacing.xl) }
-            Text(message.text)
-                .font(DSFont.body)
-                .foregroundStyle(isUser ? Color.onAccent : Color.textPrimary)
+            bubble
                 .padding(.horizontal, DS.Spacing.md)
                 .padding(.vertical, DS.Spacing.sm)
                 .background(
@@ -226,6 +224,21 @@ private struct MessageBubble: View {
                 )
                 .textSelection(.enabled)
             if !isUser { Spacer(minLength: DS.Spacing.xl) }
+        }
+    }
+
+    @ViewBuilder private var bubble: some View {
+        if isUser {
+            // User text is plain — render it verbatim on the accent bubble.
+            Text(message.text)
+                .font(DSFont.body)
+                .foregroundStyle(Color.onAccent)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            // Coach replies are markdown — render bold/bullets/tables properly.
+            CoachMarkdownText(text: message.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

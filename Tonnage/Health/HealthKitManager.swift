@@ -291,24 +291,16 @@ final class HealthKitManager {
     }
 
     private func loadSleep() async {
-        let start = Calendar.current.date(byAdding: .hour, value: -36, to: .now)
+        // Bucket the last 36h of sleep the SAME way the Recovery chart does
+        // (`dailySleepHours`, +6h wake-day anchor) and take the most recent day, rather
+        // than summing every asleep sample in the window. The old raw sum folded
+        // yesterday's nap into last night, so the number driving readiness could diverge
+        // from the one shown on the chart. Sharing the bucketing keeps them in lockstep.
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .hour, value: -36, to: .now)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
-        let descriptor = HKSampleQueryDescriptor(
-            predicates: [.categorySample(type: sleep, predicate: predicate)],
-            sortDescriptors: [SortDescriptor(\.startDate, order: .forward)],
-            limit: HKObjectQueryNoLimit
-        )
-        guard let samples = try? await descriptor.result(for: store) else { return }
-        let asleepValues: Set<Int> = [
-            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-            HKCategoryValueSleepAnalysis.asleepREM.rawValue
-        ]
-        let seconds = samples
-            .filter { asleepValues.contains($0.value) }
-            .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
-        lastNightSleepHours = seconds > 0 ? seconds / 3600 : nil
+        let byDay = await dailySleepHours(predicate: predicate, cal: cal)
+        lastNightSleepHours = byDay.last?.value
     }
 
     // MARK: Writes

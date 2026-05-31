@@ -4,13 +4,13 @@ import Foundation
 /// weekly reviews. (Verified against docs.claude.com — Messages API v2023-06-01.)
 enum CoachModel: String, CaseIterable, Identifiable {
     case haiku = "claude-haiku-4-5"
-    case opus = "claude-opus-4-7"
+    case opus = "claude-opus-4-8"
 
     var id: String { rawValue }
     var label: String {
         switch self {
         case .haiku: "Fast · Haiku 4.5"
-        case .opus:  "Deep · Opus 4.7"
+        case .opus:  "Deep · Opus 4.8"
         }
     }
 }

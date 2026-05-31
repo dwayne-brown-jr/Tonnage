@@ -35,10 +35,10 @@ struct WatchSetLogger: View {
                         .foregroundStyle(Color.accent)
                         .focusable()
                         .focused($crownFocused)
-                        .digitalCrownRotation($weight, from: 0, through: 700, by: 5,
+                        .digitalCrownRotation($weight, from: 0, through: 2000, by: 5,
                                               sensitivity: .low, isContinuous: false)
                         .frame(minWidth: 80)
-                    crownButton("plus") { weight += 5 }
+                    crownButton("plus") { weight = min(2000, weight + 5) }
                 }
                 Text("LB").font(.system(.caption2, weight: .semibold)).foregroundStyle(.secondary)
 

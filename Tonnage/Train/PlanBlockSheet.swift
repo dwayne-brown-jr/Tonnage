@@ -18,6 +18,13 @@ struct PlanBlockSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var phase: Phase = .idle
+    /// Set when the user taps "Use This Plan" — drives the confirmation dialog. Holding
+    /// the plan here (rather than committing on tap) gives an explicit, reversible
+    /// checkpoint before we rewrite the program.
+    @State private var pendingPlan: BlockPlan?
+    /// Non-nil when a SwiftData save failed; surfaced as an alert so a half-applied
+    /// rewrite never passes silently.
+    @State private var saveError: String?
 
     private enum Phase {
         case idle
@@ -56,6 +63,24 @@ struct PlanBlockSheet: View {
         .tint(.accent)
         .task { if case .idle = phase { await loadPlan() } }
         .preferredColorScheme(.dark)
+        .confirmationDialog(
+            "Use this plan for Block \(String(format: "%02d", nextBlockNumber))?",
+            isPresented: Binding(get: { pendingPlan != nil },
+                                 set: { if !$0 { pendingPlan = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingPlan
+        ) { plan in
+            Button("Rewrite Program", role: .destructive) { commit(plan) }
+            Button("Cancel", role: .cancel) { pendingPlan = nil }
+        } message: { plan in
+            Text(confirmationMessage(plan))
+        }
+        .alert("Couldn't save", isPresented: Binding(get: { saveError != nil },
+                                                     set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: {
+            Text(saveError ?? "")
+        }
     }
 
     // MARK: Loading / error
@@ -227,7 +252,7 @@ struct PlanBlockSheet: View {
             }
             .buttonStyle(.plain)
 
-            Button { commit(plan) } label: {
+            Button { pendingPlan = plan } label: {
                 Text("Use This Plan")
                     .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(Color.onAccent)
@@ -279,11 +304,32 @@ struct PlanBlockSheet: View {
 
     // MARK: Commit
 
+    /// Program sessions the plan didn't include (matched by name). These keep their old
+    /// layout on commit rather than being silently dropped — we call them out so the user
+    /// isn't surprised that one session stayed put.
+    private func unmatchedSessionNames(_ plan: BlockPlan) -> [String] {
+        guard let program else { return [] }
+        let planNames = Set(plan.sessions.map(\.name))
+        return program.orderedSessions.map(\.name).filter { !planNames.contains($0) }
+    }
+
+    private func confirmationMessage(_ plan: BlockPlan) -> String {
+        var msg = "This rewrites your program's exercises to the new layout. Past logged workouts are untouched, but the change to the template can't be undone."
+        let unmatched = unmatchedSessionNames(plan)
+        if !unmatched.isEmpty {
+            let list = unmatched.joined(separator: ", ")
+            msg += "\n\nHeads up: \(list) \(unmatched.count == 1 ? "wasn't" : "weren't") in the plan, so \(unmatched.count == 1 ? "it keeps" : "they keep") the current exercises."
+        }
+        return msg
+    }
+
     /// Apply the plan to the existing Program: delete each SessionTemplate's
     /// ExerciseTemplates and rewrite from the proposal. Past LoggedExercise snapshots
     /// keep their original names via SwiftData's nullify rule on the template inverse.
+    /// On a save failure we roll back so the program is never left half-rewritten.
     private func commit(_ plan: BlockPlan) {
         guard let program else { return }
+        pendingPlan = nil
         let plansByName = Dictionary(uniqueKeysWithValues: plan.sessions.map { ($0.name, $0) })
 
         for session in program.orderedSessions {
@@ -305,9 +351,16 @@ struct PlanBlockSheet: View {
                 context.insert(t)
             }
         }
-        try? context.save()
-        Haptics.success()
-        onCommit()
-        dismiss()
+
+        do {
+            try context.save()
+            Haptics.success()
+            onCommit()
+            dismiss()
+        } catch {
+            context.rollback()   // discard the in-memory rewrite so nothing is half-applied
+            Haptics.warning()
+            saveError = "The new plan couldn't be saved (\(error.localizedDescription)). Your current program is unchanged — try again."
+        }
     }
 }

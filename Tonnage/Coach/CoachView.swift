@@ -198,7 +198,7 @@ struct CoachView: View {
                                          focusSession: focusSession.isEmpty ? nil : focusSession,
                                          focusDay: focusDay,
                                          maxWorkouts: 12, maxActivities: 8)
-        return CoachContext.systemPrompt(for: ProfileStore.current) + "\n\n" + context
+        return CoachContext.systemPrompt(for: ProfileStore.current, split: ProfileStore.split) + "\n\n" + context
     }
 }
 

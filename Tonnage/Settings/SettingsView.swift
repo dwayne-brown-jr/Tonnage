@@ -30,6 +30,10 @@ struct SettingsView: View {
     @AppStorage(ProfileStore.Key.name) private var profileName = ""
     @AppStorage(ProfileStore.Key.goal) private var profileGoalRaw = TrainingGoal.recomp.rawValue
     @AppStorage(ProfileStore.Key.experience) private var profileExperienceRaw = ExperienceLevel.returning.rawValue
+    @AppStorage(ProfileStore.Key.split) private var splitRaw = SplitPreset.upperLower.rawValue
+    @State private var showSplitPicker = false
+
+    private var split: SplitPreset { SplitPreset(rawValue: splitRaw) ?? .upperLower }
 
     var body: some View {
         NavigationStack {
@@ -38,6 +42,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.lg) {
                         profileCard
+                        splitCard
                         coachCard
                         healthCard
                         restTimerCard
@@ -71,6 +76,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showProfileEditor) {
             ProfileSetupView(onFinish: { showProfileEditor = false }, finishTitle: "Done")
+        }
+        .sheet(isPresented: $showSplitPicker) {
+            SplitPickerSheet()
         }
         .confirmationDialog("Reset all logged data?", isPresented: $showResetConfirm, titleVisibility: .visible) {
             Button("Reset Everything", role: .destructive) {
@@ -422,6 +430,29 @@ struct SettingsView: View {
         let experience = ExperienceLevel(rawValue: profileExperienceRaw)?.label ?? "Returning"
         let who = name.isEmpty ? "Set your name" : name
         return "\(who) · \(goal) · \(experience) — personalizes your coach."
+    }
+
+    // MARK: Training split
+
+    private var splitCard: some View {
+        card {
+            Button {
+                Haptics.impact(.light)
+                showSplitPicker = true
+            } label: {
+                HStack {
+                    Label("Training Split", systemImage: "square.grid.2x2.fill")
+                        .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+                    Spacer()
+                    Text(split.label).font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.accent)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold)).foregroundStyle(Color.textTertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            Text("\(split.daysPerWeek) days/week — tap to change. Switching rewrites your program; logged workouts are kept.")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+        }
     }
 
     // MARK: How it works

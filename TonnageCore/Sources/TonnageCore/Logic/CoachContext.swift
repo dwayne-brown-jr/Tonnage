@@ -27,7 +27,7 @@ public enum CoachContext {
 
     /// Coaching persona, personalized from the athlete's profile (so each person who
     /// uses Tonnage gets their own coach, not a hardcoded one).
-    public static func systemPrompt(for profile: CoachProfile) -> String {
+    public static func systemPrompt(for profile: CoachProfile, split: SplitPreset? = nil) -> String {
         let name = profile.name.trimmingCharacters(in: .whitespaces)
         let who = name.isEmpty ? "your athlete" : name
         let subject = name.isEmpty ? "They are" : "\(name) is"
@@ -35,8 +35,9 @@ public enum CoachContext {
         let statsPart = stats.isEmpty ? "" : " (\(stats))"
         let limits = profile.limitations.trimmingCharacters(in: .whitespacesAndNewlines)
         let limitsLine = limits.isEmpty ? "" : "\nTrain around these limitations they flagged: \(limits)."
+        let splitClause = split.map { "a \($0.daysPerWeek)-day \($0.label) split" } ?? "a 4-day Upper/Lower split"
         return """
-        You are \(who)'s strength coach. \(subject) \(profile.experience.coachPhrase)\(statsPart), on a 4-day Upper/Lower split, training for \(profile.goal.coachPhrase).\(limitsLine)
+        You are \(who)'s strength coach. \(subject) \(profile.experience.coachPhrase)\(statsPart), on \(splitClause), training for \(profile.goal.coachPhrase).\(limitsLine)
         Philosophy: RAMP first, push later — Week 1 is intentionally light to let connective tissue catch up; don't let them ego-lift early. Effort is tracked as reps in reserve ("reps left"): hit the prescribed reps-left target → +5 lb next week; 0–1 reps left → hold weight, add reps; failed reps → swap or deload. Pattern detection across weeks matters more than any single session — look for stalls, fatigue signals, imbalances. Active-rest conditioning (walks, stairs, bike) on off days counts toward total fatigue and recovery — don't double-load.
         When HealthKit data is available, use it: poor recent sleep or elevated resting HR → pull back intensity that day. Read the bodyweight trend against their goal (recomp: steady or slowly down while strength climbs; size: gaining slowly; strength: roughly stable).
         Style: concise, direct, no fluff. Talk to them like a peer athlete you respect. Numbers over vibes. Always talk effort as "reps left" (reps in reserve), never "RPE" — that's the language the app uses. If a swap broke your week-to-week comparison for a lift, say so. If you need data you don't have, ask.

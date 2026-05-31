@@ -284,6 +284,123 @@ public enum ExerciseLibrary {
                 "Wood chop: pull diagonally across your body. Pallof: press straight out and resist rotation.",
                 "Keep your hips square and core braced.",
                 "Move slowly and with control — quality over speed."
+            ]),
+        "leg press": .init(
+            summary: "Machine compound for the quads and glutes.",
+            targets: "Quads · glutes · hamstrings",
+            steps: [
+                "Feet shoulder-width, mid-platform; back and hips flat against the pads.",
+                "Release the safeties and lower until your knees reach about 90°.",
+                "Don't let your lower back round off the pad at the bottom.",
+                "Press through mid-foot to near-lockout without slamming the knees."
+            ]),
+        "leg extension": .init(
+            summary: "Knee-extension isolation for the quads.",
+            targets: "Quads",
+            steps: [
+                "Pad on your lower shins, knees aligned with the machine's pivot.",
+                "Extend to full lockout and squeeze the quads.",
+                "Pause briefly at the top.",
+                "Lower slowly without letting the stack rest."
+            ]),
+        "deadlift": .init(
+            summary: "Conventional pull from the floor — full posterior-chain strength.",
+            targets: "Hamstrings · glutes · back · grip",
+            steps: [
+                "Bar over mid-foot, shins about an inch away; grip just outside your legs.",
+                "Hips back, flat back, take the slack out of the bar, brace.",
+                "Drive the floor away, keeping the bar against your legs.",
+                "Lock out hips and knees together; lower by hinging back."
+            ]),
+        "front squat": .init(
+            summary: "Front-racked squat — upright, quad-biased pattern.",
+            targets: "Quads · core",
+            steps: [
+                "Rack the bar on your front delts, elbows high, fingers under the bar.",
+                "Brace, then squat down keeping your torso tall and elbows up.",
+                "Hit depth with knees tracking over the toes.",
+                "Drive up through mid-foot, elbows leading."
+            ]),
+        "overhead press": .init(
+            summary: "Standing barbell press — vertical pushing strength.",
+            targets: "Shoulders · triceps · core",
+            steps: [
+                "Bar on your front delts, grip just outside shoulders, brace hard.",
+                "Press straight up, moving your head back slightly to clear the bar.",
+                "Lock out overhead with the bar over your mid-foot.",
+                "Lower under control back to the front-rack."
+            ]),
+        "incline barbell press": .init(
+            summary: "Upper-chest biased barbell press.",
+            targets: "Upper chest · front delts · triceps",
+            steps: [
+                "Set the bench to about 30°; grip just outside shoulder width.",
+                "Unrack over your shoulders; lower to the upper chest, elbows ~45°.",
+                "Press up and slightly back to lockout.",
+                "Keep your shoulder blades pinned throughout."
+            ]),
+        "cable fly": .init(
+            summary: "Cable isolation for the chest stretch and squeeze.",
+            targets: "Chest",
+            steps: [
+                "Pulleys about shoulder height; a handle in each hand, one foot forward.",
+                "Soft bend in the elbows, arms wide to feel a chest stretch.",
+                "Bring the handles together in front of your chest in an arc.",
+                "Squeeze, then return slowly to the stretch."
+            ]),
+        "overhead triceps extension": .init(
+            summary: "Overhead extension for the triceps long head.",
+            targets: "Triceps (long head)",
+            steps: [
+                "Hold a dumbbell, EZ-bar, or rope overhead, elbows pointing up.",
+                "Lower behind your head for a deep stretch, upper arms still.",
+                "Extend to lockout, squeezing the triceps.",
+                "Keep your elbows tucked and ribs down."
+            ]),
+        "seated cable row": .init(
+            summary: "Horizontal cable pull for back thickness.",
+            targets: "Mid-back · lats · biceps",
+            steps: [
+                "Feet on the platform, slight knee bend, tall chest, arms extended.",
+                "Row the handle to your lower ribs, driving the elbows back.",
+                "Squeeze the shoulder blades; don't heave with the low back.",
+                "Return to a full stretch under control."
+            ]),
+        "single-arm db row": .init(
+            summary: "Unilateral row for the lats and mid-back.",
+            targets: "Lats · mid-back",
+            steps: [
+                "Brace a hand and knee on a bench, back flat and parallel to the floor.",
+                "Let the dumbbell hang, then row it to your hip / lower ribs.",
+                "Drive the elbow back and squeeze; don't rotate the torso.",
+                "Lower slowly to a full stretch."
+            ]),
+        "rear-delt fly": .init(
+            summary: "Reverse fly for the rear delts.",
+            targets: "Rear delts · upper back",
+            steps: [
+                "Hinge forward (or use a chest pad), light dumbbells hanging.",
+                "Raise out to the sides in a wide arc, leading with the elbows.",
+                "Squeeze the rear delts at the top; keep the traps relaxed.",
+                "Lower slowly — light and strict."
+            ]),
+        "weighted pull-up / lat pulldown": .init(
+            summary: "Vertical pull for lat width and strength.",
+            targets: "Lats · biceps · upper back",
+            steps: [
+                "Pull-up: hang from the bar (add load via belt/DB); pulldown: lock the thigh pad.",
+                "Start from a full stretch with active shoulders.",
+                "Pull your chest to the bar / the bar to your chest, elbows driving down.",
+                "Lower under control to a full stretch."
+            ]),
+        "barbell or ez-bar curl": .init(
+            summary: "Standing barbell biceps curl.",
+            targets: "Biceps",
+            steps: [
+                "Stand tall, elbows pinned at your sides, shoulder-width grip.",
+                "Curl the bar without swinging or leaning back.",
+                "Squeeze at the top.",
+                "Lower slowly to full extension."
             ])
     ]
 }

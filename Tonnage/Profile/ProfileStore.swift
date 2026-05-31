@@ -14,6 +14,13 @@ enum ProfileStore {
         static let goal = "profile.goal"
         static let experience = "profile.experience"
         static let limitations = "profile.limitations"
+        static let split = "profile.split"
+    }
+
+    /// The athlete's chosen training split (drives the seeded program + coach framing).
+    /// Defaults to Upper/Lower for anyone who hasn't picked.
+    static var split: SplitPreset {
+        SplitPreset(rawValue: UserDefaults.standard.string(forKey: Key.split) ?? "") ?? .upperLower
     }
 
     static var current: CoachProfile {

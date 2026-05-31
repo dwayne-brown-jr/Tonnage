@@ -12,9 +12,12 @@ struct OnboardingView: View {
     var finishTitle: String = "Start Training"
 
     @Environment(HealthKitManager.self) private var health
+    @AppStorage(ProfileStore.Key.split) private var splitRaw = SplitPreset.upperLower.rawValue
     @State private var page = 0
     @State private var connecting = false
     private let lastPage = 5
+
+    private var split: SplitPreset { SplitPreset(rawValue: splitRaw) ?? .upperLower }
 
     var body: some View {
         ZStack {
@@ -138,22 +141,22 @@ struct OnboardingView: View {
     private var welcomePage: some View {
         scaffold(icon: "dumbbell.fill", kicker: "How it works", title: "Built to\nprogress you") {
             VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                bodyText("Tonnage runs a 4-day Upper/Lower split in 5-week blocks — and pre-fills every lift with a suggested weight off your own top sets.")
+                bodyText("Tonnage runs your split in 5-week blocks — and pre-fills every lift with a suggested weight off your own top sets.")
                 bodyText("No guessing what to load. Just show up, hit the call, log your effort.")
             }
         }
     }
 
     private var splitPage: some View {
-        scaffold(icon: "square.grid.2x2.fill", kicker: "Day to day", title: "The split") {
+        scaffold(icon: "square.grid.2x2.fill", kicker: "Day to day", title: "Your split") {
             VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                bodyText("Four sessions. You pick the day — the exercises, sets, reps, and effort targets stay consistent so they're actually progressable.")
+                bodyText("Pick the split that fits your week — Full Body, Upper/Lower, or Push/Pull/Legs. You choose the day; the exercises, sets, reps, and effort targets stay consistent so they're actually progressable.")
                 VStack(spacing: DS.Spacing.sm) {
-                    splitRow("UPPER A", "Push focus")
-                    splitRow("LOWER A", "Squat focus")
-                    splitRow("UPPER B", "Pull focus")
-                    splitRow("LOWER B", "Hinge focus")
+                    ForEach(split.sessionSpecs, id: \.name) { spec in
+                        splitRow(spec.name.uppercased(), spec.focus)
+                    }
                 }
+                bodyText("Set to \(split.label) (\(split.daysPerWeek) days/week) — change it anytime in Settings.")
             }
         }
     }

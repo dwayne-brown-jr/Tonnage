@@ -274,7 +274,11 @@ struct PlanBlockSheet: View {
             return
         }
         phase = .loading
-        let system = CoachBlockPlanner.systemPrompt(for: ProfileStore.current)
+        let specs = (program?.orderedSessions ?? []).map { SessionSpec(name: $0.name, focus: $0.subtitle) }
+        let system = CoachBlockPlanner.systemPrompt(
+            for: ProfileStore.current,
+            sessions: specs.isEmpty ? SplitPreset.upperLower.sessionSpecs : specs
+        )
         let user = CoachBlockPlanner.userPrompt(
             currentBlockNumber: currentBlockNumber,
             program: program,

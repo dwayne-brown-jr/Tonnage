@@ -9,18 +9,24 @@ public enum CoachBlockPlanner {
 
     /// Persona + hard rules for the planner. Inherits the athlete profile so the
     /// Coach speaks in their context, but flips into structured-output mode.
-    public static func systemPrompt(for profile: CoachProfile) -> String {
+    public static func systemPrompt(for profile: CoachProfile,
+                                    sessions: [SessionSpec] = SplitPreset.upperLower.sessionSpecs) -> String {
         let name = profile.name.trimmingCharacters(in: .whitespaces)
         let who = name.isEmpty ? "your athlete" : name
         let stats = profile.statsClause
         let statsPart = stats.isEmpty ? "" : " (\(stats))"
 
+        let count = sessions.count
+        let sessionList = sessions.map { "\($0.name) (\($0.focus))" }.joined(separator: ", ")
+        let firstName = sessions.first?.name ?? "Upper A"
+        let firstFocus = sessions.first?.focus ?? "Push focus"
+
         return """
-        You are \(who)'s strength coach. \(profile.experience.coachPhrase)\(statsPart), 4-day Upper/Lower split, training for \(profile.goal.coachPhrase).
+        You are \(who)'s strength coach. \(profile.experience.coachPhrase)\(statsPart), \(count)-day split, training for \(profile.goal.coachPhrase).
         TASK: Plan the next 5-week block. Keep main barbell lifts constant across blocks so progress is measurable. Rotate accessory lifts based on what stalled or what's underdeveloped. Address weak points the prior block surfaced. Match the volume profile (sets × rep range) to the goal — leaner ranges for strength, higher reps for size.
         PHASE STRUCTURE inside every block: Week 1 RAMP (3–4 reps left), W2–3 BUILD (2 reps left), W4 PEAK (0–1 reps left), W5 DELOAD. You don't author per-week prescriptions — the engine derives those from the block-level rep range and rpe target.
         RULES:
-        - Same 4 sessions: Upper A (Push focus), Lower A (Squat focus), Upper B (Pull focus), Lower B (Hinge focus).
+        - Keep the same \(count) sessions, with their names and focus unchanged: \(sessionList).
         - 5–7 exercises per session, 1 compound first, then accessories.
         - Use real, well-known lift names — bench press, romanian deadlift, lat pulldown, etc. No invented exercises.
         - rpeTarget is a string like "8" or "7→8→8" (RPE per set; the app translates it to reps-left for the user).
@@ -31,7 +37,7 @@ public enum CoachBlockPlanner {
         - One-sentence `rationale` per exercise grounded in the data: PR trend, stall, weak point, recovery.
         OUTPUT FORMAT — STRICT:
         Wrap the JSON in <block_plan> tags. No prose outside. No markdown fences. No code blocks. Just <block_plan>{...}</block_plan>.
-        Schema:
+        Return all \(count) sessions in the same order. Schema:
         <block_plan>
         {
           "blockNumber": <int>,
@@ -39,8 +45,8 @@ public enum CoachBlockPlanner {
           "summary": "<1–2 sentences>",
           "sessions": [
             {
-              "name": "Upper A",
-              "subtitle": "Push focus",
+              "name": "\(firstName)",
+              "subtitle": "\(firstFocus)",
               "exercises": [
                 {
                   "name": "Barbell Bench Press",

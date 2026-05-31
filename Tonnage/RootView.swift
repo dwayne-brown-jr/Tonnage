@@ -13,8 +13,13 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
 
     @AppStorage("hasCompletedOnboarding") private var hasOnboarded = false
+    @AppStorage("hasChosenSplit") private var hasChosenSplit = false
     @State private var showOnboarding = false
     @State private var showProfile = false
+    @State private var showSplitPicker = false
+    /// True only during the genuine first-run sequence, so the split picker is offered to
+    /// new users but never auto-shown to people who onboarded before this feature.
+    @State private var firstRunFlow = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -46,17 +51,35 @@ struct RootView: View {
             OnboardingView {
                 hasOnboarded = true
                 showOnboarding = false
+                firstRunFlow = true
                 if !ProfileStore.isComplete {
                     // Present the profile step just after onboarding dismisses.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(350))
-                        showProfile = true
-                    }
+                    presentAfterDismiss { showProfile = true }
+                } else if !hasChosenSplit {
+                    presentAfterDismiss { showSplitPicker = true }
                 }
             }
         }
         .fullScreenCover(isPresented: $showProfile) {
-            ProfileSetupView { showProfile = false }
+            ProfileSetupView {
+                showProfile = false
+                // First-run only: chain into the split picker after the profile step.
+                if firstRunFlow && !hasChosenSplit {
+                    presentAfterDismiss { showSplitPicker = true }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showSplitPicker) {
+            SplitPickerSheet { firstRunFlow = false }
+        }
+    }
+
+    /// Re-present a sheet shortly after another dismisses (a single live fullScreenCover
+    /// at a time needs the gap, or the next one silently no-ops).
+    private func presentAfterDismiss(_ action: @escaping () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            action()
         }
     }
 

@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var connecting = false
     @State private var apiKeyInput = ""
     @State private var keySet = Keychain.read(Keychain.apiKeyAccount) != nil
+    @State private var reminders = TrainingReminders()
 
     @State private var exportDoc: JSONBackupDocument?
     @State private var showExporter = false
@@ -40,6 +41,7 @@ struct SettingsView: View {
                         coachCard
                         healthCard
                         restTimerCard
+                        remindersCard
                         howItWorksCard
                         dataCard
 #if DEBUG
@@ -58,6 +60,7 @@ struct SettingsView: View {
         .onChange(of: compoundRest) { _, _ in PhoneConnectivity.shared.pushContext() }
         .onChange(of: isolationRest) { _, _ in PhoneConnectivity.shared.pushContext() }
         .task { await health.importExternalWorkouts(into: modelContext) }
+        .task { await reminders.refreshAuthStatus() }
         .fileExporter(isPresented: $showExporter, document: exportDoc,
                       contentType: .json, defaultFilename: "tonnage-backup") { _ in }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
@@ -309,6 +312,86 @@ struct SettingsView: View {
             Spacer()
             TimeStepperField(seconds: seconds, step: 15)
         }
+    }
+
+    // MARK: Training reminders
+
+    private var remindersCard: some View {
+        card {
+            HStack {
+                Label("Training Reminders", systemImage: "bell.badge.fill")
+                    .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { reminders.isEnabled },
+                    set: { on in Task { await reminders.setEnabled(on); Haptics.selection() } }
+                ))
+                .labelsHidden()
+                .tint(Color.accent)
+            }
+
+            if reminders.authDenied {
+                Text("Notifications are off for Tonnage. Turn them on in iOS Settings → Notifications → Tonnage.")
+                    .font(.system(.caption2)).foregroundStyle(Color.danger)
+            }
+
+            if reminders.isEnabled && !reminders.authDenied {
+                HStack {
+                    Text("Time").dsLabel()
+                    Spacer()
+                    DatePicker("", selection: reminderTime, displayedComponents: .hourAndMinute)
+                        .labelsHidden()
+                        .tint(Color.accent)
+                }
+                Text("Days").dsLabel()
+                weekdayPicker
+            }
+
+            Text("A nudge on your training days so you don't break the chain.")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+        }
+    }
+
+    /// Bridges the manager's hour/minute to a `Date` the system DatePicker can edit.
+    private var reminderTime: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(from: DateComponents(hour: reminders.hour, minute: reminders.minute)) ?? Date()
+            },
+            set: { newDate in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                reminders.hour = c.hour ?? 18
+                reminders.minute = c.minute ?? 0
+            }
+        )
+    }
+
+    private var weekdayPicker: some View {
+        // Calendar weekdays: 1 = Sunday … 7 = Saturday.
+        let symbols = ["S", "M", "T", "W", "T", "F", "S"]
+        return HStack(spacing: DS.Spacing.xs) {
+            ForEach(1...7, id: \.self) { wd in
+                let on = reminders.weekdays.contains(wd)
+                Button {
+                    Haptics.selection()
+                    if on { reminders.weekdays.remove(wd) } else { reminders.weekdays.insert(wd) }
+                } label: {
+                    Text(symbols[wd - 1])
+                        .font(.system(.subheadline, weight: .bold))
+                        .foregroundStyle(on ? Color.onAccent : Color.textSecondary)
+                        .frame(maxWidth: .infinity).frame(height: 38)
+                        .background(on ? Color.accent : Color.surfaceElevated2,
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Self.weekdayName(wd))
+                .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+    }
+
+    private static func weekdayName(_ wd: Int) -> String {
+        Calendar.current.weekdaySymbols[(wd - 1) % 7]
     }
 
     // MARK: Athlete profile

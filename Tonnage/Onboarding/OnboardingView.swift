@@ -11,8 +11,10 @@ struct OnboardingView: View {
     /// "Done" when re-read from Settings).
     var finishTitle: String = "Start Training"
 
+    @Environment(HealthKitManager.self) private var health
     @State private var page = 0
-    private let lastPage = 4
+    @State private var connecting = false
+    private let lastPage = 5
 
     var body: some View {
         ZStack {
@@ -25,6 +27,7 @@ struct OnboardingView: View {
                     blockPage.tag(2)
                     callPage.tag(3)
                     topSetPage.tag(4)
+                    recoveryPage.tag(5)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .animation(DS.spring, value: page)
@@ -235,9 +238,90 @@ struct OnboardingView: View {
             }
         }
     }
+
+    // MARK: Readiness (the daily wedge — explain it AND let them connect right here)
+
+    private var recoveryPage: some View {
+        scaffold(icon: "waveform.path.ecg", kicker: "Your daily edge", title: "Train with\nyour recovery") {
+            VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                bodyText("Each morning Tonnage reads your recovery from Apple Health and scores your readiness 0–100. Run down? The engine automatically holds your loads instead of chasing PRs. Primed? Green light.")
+                VStack(spacing: DS.Spacing.sm) {
+                    signalRow("heart.fill", "HRV", "Recovery vs. your baseline")
+                    signalRow("waveform.path.ecg", "Resting HR", "Elevated = under-recovered")
+                    signalRow("bed.double.fill", "Sleep", "Last night vs. a 7.5h target")
+                }
+                connectControl
+                Text("Optional — and you can connect any time in Settings. Without it, everything else still works.")
+                    .font(DSFont.caption)
+                    .foregroundStyle(Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func signalRow(_ icon: String, _ name: String, _ detail: String) -> some View {
+        HStack(spacing: DS.Spacing.md) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Color.accent)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.textPrimary)
+                Text(detail).font(DSFont.caption).foregroundStyle(Color.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DS.Spacing.md)
+        .padding(.vertical, DS.Spacing.sm)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+    }
+
+    @ViewBuilder private var connectControl: some View {
+        if !health.isAvailable {
+            Label("Apple Health isn't available on this device", systemImage: "info.circle")
+                .font(DSFont.caption).foregroundStyle(Color.textTertiary)
+        } else if health.hasRequested {
+            Label("Apple Health connected", systemImage: "checkmark.seal.fill")
+                .font(.system(.subheadline, weight: .bold))
+                .foregroundStyle(Color.success)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, DS.Spacing.md)
+                .background(Color.success.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        } else {
+            Button(action: connectHealth) {
+                HStack(spacing: DS.Spacing.sm) {
+                    if connecting {
+                        ProgressView().tint(Color.onAccent)
+                    } else {
+                        Image(systemName: "heart.fill").font(.system(size: 15, weight: .bold))
+                    }
+                    Text(connecting ? "Connecting…" : "Connect Apple Health")
+                        .font(.system(.subheadline, weight: .bold))
+                }
+                .foregroundStyle(Color.onAccent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, DS.Spacing.md)
+                .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(connecting)
+        }
+    }
+
+    private func connectHealth() {
+        guard !connecting else { return }
+        connecting = true
+        Haptics.impact(.light)
+        Task {
+            await health.requestAuthorization()
+            connecting = false
+            Haptics.success()
+        }
+    }
 }
 
 #Preview("Onboarding") {
     OnboardingView(onFinish: {})
+        .environment(HealthKitManager())
         .preferredColorScheme(.dark)
 }

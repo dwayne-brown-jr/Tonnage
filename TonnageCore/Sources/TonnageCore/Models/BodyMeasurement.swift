@@ -28,6 +28,25 @@ public enum MeasurementType: String, Codable, CaseIterable, Sendable, Identifiab
     /// True when a smaller number is generally the goal (waist, body fat); the UI tints
     /// deltas accordingly (down = good for these, up = good for the rest).
     public var lowerIsBetter: Bool { self == .waist || self == .bodyFat }
+
+    /// Forgiving match for free-form labels (e.g. from the photo estimator): handles
+    /// synonyms and underscores so "bicep" → .arm, "body_fat" → .bodyFat, etc.
+    public static func loose(_ s: String) -> MeasurementType? {
+        let n = s.lowercased().replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        switch n {
+        case "shoulders", "shoulder", "delts", "deltoids": return .shoulders
+        case "chest", "pecs", "bust": return .chest
+        case "arm", "arms", "bicep", "biceps", "upper arm": return .arm
+        case "waist", "stomach", "abdomen", "belly": return .waist
+        case "hips", "hip", "glutes": return .hips
+        case "thigh", "thighs", "quad", "quads", "leg", "legs": return .thigh
+        case "calf", "calves": return .calf
+        case "neck": return .neck
+        case "body fat", "bodyfat", "body fat %", "body fat percentage", "bf", "bf%": return .bodyFat
+        default: return MeasurementType(rawValue: s)
+        }
+    }
 }
 
 /// One logged measurement. CloudKit-friendly: every stored property has a default and

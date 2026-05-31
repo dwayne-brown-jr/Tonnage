@@ -89,6 +89,43 @@ struct AnthropicClient {
         return text
     }
 
+    /// Single-shot vision call: one user message carrying a JPEG image + a text prompt.
+    /// Used by the photo body-measurement estimate. Same auth + error handling as `send`.
+    func sendVision(system: String, userText: String, jpegBase64: String,
+                    model: CoachModel, maxTokens: Int = 1024) async throws -> String {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 90
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+
+        let body = VisionRequestBody(
+            model: model.rawValue,
+            max_tokens: maxTokens,
+            system: system,
+            messages: [.init(role: "user", content: [
+                .image(mediaType: "image/jpeg", base64: jpegBase64),
+                .text(userText)
+            ])]
+        )
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw CoachError.network
+        }
+        guard let http = response as? HTTPURLResponse else { throw CoachError.network }
+        guard http.statusCode == 200 else { throw CoachError.http(http.statusCode, Self.parseError(data)) }
+        guard let decoded = try? JSONDecoder().decode(ResponseBody.self, from: data) else { throw CoachError.decoding }
+        let text = decoded.content.first(where: { $0.type == "text" })?.text ?? ""
+        guard !text.isEmpty else { throw CoachError.empty }
+        return text
+    }
+
     private static func parseError(_ data: Data) -> String {
         struct APIError: Decodable { struct Inner: Decodable { let message: String }; let error: Inner }
         return (try? JSONDecoder().decode(APIError.self, from: data))?.error.message ?? "unknown"
@@ -105,5 +142,42 @@ struct AnthropicClient {
     private struct ResponseBody: Decodable {
         let content: [Block]
         struct Block: Decodable { let type: String; let text: String? }
+    }
+
+    /// Request body for a vision call — `content` is an array of typed blocks (image +
+    /// text) rather than a plain string, per the Messages API image format.
+    private struct VisionRequestBody: Encodable {
+        let model: String
+        let max_tokens: Int
+        let system: String
+        let messages: [Message]
+
+        struct Message: Encodable {
+            let role: String
+            let content: [Block]
+        }
+
+        enum Block: Encodable {
+            case text(String)
+            case image(mediaType: String, base64: String)
+
+            private enum Keys: String, CodingKey { case type, text, source }
+            private enum SourceKeys: String, CodingKey { case type, mediaType = "media_type", data }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: Keys.self)
+                switch self {
+                case .text(let t):
+                    try c.encode("text", forKey: .type)
+                    try c.encode(t, forKey: .text)
+                case .image(let mediaType, let base64):
+                    try c.encode("image", forKey: .type)
+                    var src = c.nestedContainer(keyedBy: SourceKeys.self, forKey: .source)
+                    try src.encode("base64", forKey: .type)
+                    try src.encode(mediaType, forKey: .mediaType)
+                    try src.encode(base64, forKey: .data)
+                }
+            }
+        }
     }
 }

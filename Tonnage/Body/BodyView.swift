@@ -18,6 +18,8 @@ struct BodyView: View {
     @State private var selectedType: MeasurementType?
     @State private var pickerItem: PhotosPickerItem?
     @State private var viewerPhoto: ProgressPhoto?
+    @State private var scanPickerItem: PhotosPickerItem?
+    @State private var scanImage: ScanImage?
 
     private var latest: [BodyMetrics.Latest] { BodyMetrics.latest(measurements) }
     private var tracked: [MeasurementType] { BodyMetrics.trackedTypes(in: measurements) }
@@ -36,6 +38,7 @@ struct BodyView: View {
                         latestGrid
                         trendCard
                     }
+                    estimateButton
                     photosCard
                 }
                 .padding(DS.Spacing.lg)
@@ -64,9 +67,52 @@ struct BodyView: View {
         .fullScreenCover(item: $viewerPhoto) { photo in
             ProgressPhotoViewer(photo: photo) { deletePhoto(photo) }
         }
+        .sheet(item: $scanImage) { img in
+            BodyScanSheet(imageData: img.data)
+        }
         .onChange(of: pickerItem) { _, item in importPickedPhoto(item) }
+        .onChange(of: scanPickerItem) { _, item in loadScanImage(item) }
         .onAppear { syncSelection() }
         .onChange(of: tracked) { _, _ in syncSelection() }
+    }
+
+    // MARK: Estimate from photo
+
+    private var estimateButton: some View {
+        PhotosPicker(selection: $scanPickerItem, matching: .images, photoLibrary: .shared()) {
+            HStack(spacing: DS.Spacing.md) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Estimate from Photo")
+                        .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+                    Text("AI reads a photo into rough measurements you confirm")
+                        .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(Color.textTertiary)
+            }
+            .padding(DS.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func loadScanImage(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        Task {
+            defer { scanPickerItem = nil }
+            guard let raw = try? await item.loadTransferable(type: Data.self),
+                  let encoded = ProgressPhotoStore.encode(raw) else { return }
+            scanImage = ScanImage(data: encoded)
+        }
     }
 
     // MARK: Photo import / delete
@@ -343,6 +389,12 @@ struct BodyView: View {
     private func fmt(_ v: Double) -> String {
         v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
     }
+}
+
+/// Identifiable wrapper so a picked-and-encoded scan photo can drive `.sheet(item:)`.
+private struct ScanImage: Identifiable {
+    let id = UUID()
+    let data: Data
 }
 
 /// Single-measurement entry — pick a type, dial the value, choose the date. Prefills the

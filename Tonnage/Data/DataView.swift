@@ -34,23 +34,24 @@ struct DataView: View {
             ZStack {
                 Color.surface.ignoresSafeArea()
                 ScrollView {
-                    if hasData {
-                        VStack(spacing: DS.Spacing.lg) {
+                    VStack(spacing: DS.Spacing.lg) {
+                        if hasData {
                             summary
                             if sessionsPerWeek > 0 { adherenceCard }
                             if !recentPRs.isEmpty { prsCard }
                             volumeCard
                             progressionCard
                             bodyweightCard
+                        } else {
+                            EmptyStateView(systemImage: "chart.line.uptrend.xyaxis",
+                                           title: "No Data Yet",
+                                           message: "Log a few sets in TRAIN and your progression shows up here.")
+                                .frame(minHeight: 360)
                         }
-                        .padding(DS.Spacing.lg)
-                        .padding(.bottom, DS.Spacing.xxl)
-                    } else {
-                        EmptyStateView(systemImage: "chart.line.uptrend.xyaxis",
-                                       title: "No Data Yet",
-                                       message: "Log a few sets in TRAIN and your progression shows up here.")
-                            .frame(minHeight: 460)
+                        bodyNavCard
                     }
+                    .padding(DS.Spacing.lg)
+                    .padding(.bottom, DS.Spacing.xxl)
                 }
             }
             .safeAreaInset(edge: .top, spacing: 0) { header }
@@ -374,6 +375,35 @@ struct DataView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, DS.Spacing.md)
+    }
+
+    // MARK: Body measurements entry
+
+    private var bodyNavCard: some View {
+        NavigationLink {
+            BodyView()
+        } label: {
+            HStack(spacing: DS.Spacing.md) {
+                Image(systemName: "ruler.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Body Measurements")
+                        .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+                    Text("Waist, arms, body fat & progress photos")
+                        .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(Color.textTertiary)
+            }
+            .padding(DS.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous).strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Chart chrome

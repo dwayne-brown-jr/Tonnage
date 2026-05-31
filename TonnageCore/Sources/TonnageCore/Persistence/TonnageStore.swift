@@ -14,7 +14,9 @@ public enum TonnageStore {
         LoggedExercise.self,
         LoggedSet.self,
         Activity.self,
-        CoachChatMessage.self
+        CoachChatMessage.self,
+        BodyMeasurement.self,
+        ProgressPhoto.self
     ])
 
     /// CloudKit container that mirrors the private database when sync is enabled.

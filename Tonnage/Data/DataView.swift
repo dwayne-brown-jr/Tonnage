@@ -16,6 +16,7 @@ struct DataView: View {
     @State private var scrubWeek: Int?
     @State private var showWeightEntry = false
     @State private var shareItem: ShareImageItem?
+    @State private var showWorkoutPicker = false
 
     /// DATA is scoped to the active block so volume/progression don't mix mesocycles.
     private var scoped: [LoggedWorkout] { workouts.filter { $0.blockNumber == currentBlock } }
@@ -67,19 +68,21 @@ struct DataView: View {
             WeightEntrySheet { pounds in Task { await health.saveBodyMass(pounds: pounds) } }
         }
         .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+        .sheet(isPresented: $showWorkoutPicker) { WorkoutPickerSheet(workouts: shareableWorkouts) }
     }
 
     // MARK: Sharing
 
-    private var latestLiftWorkout: LoggedWorkout? {
+    /// Logged lift sessions with completed sets, most recent first — what's shareable.
+    private var shareableWorkouts: [LoggedWorkout] {
         workouts.filter { $0.dayType == .lift && $0.completedSetCount > 0 }
-            .max(by: { $0.date < $1.date })
+            .sorted { $0.date > $1.date }
     }
 
     private var shareMenu: some View {
         Menu {
-            if latestLiftWorkout != nil {
-                Button { shareLatestWorkout() } label: { Label("Share Latest Workout", systemImage: "dumbbell.fill") }
+            if !shareableWorkouts.isEmpty {
+                Button { showWorkoutPicker = true } label: { Label("Share a Workout…", systemImage: "dumbbell.fill") }
             }
             if hasData {
                 Button { shareBlockSummary() } label: { Label("Share Block Check-In", systemImage: "chart.bar.fill") }
@@ -91,14 +94,7 @@ struct DataView: View {
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.surfaceElevated2))
         }
-        .disabled(latestLiftWorkout == nil && !hasData)
-    }
-
-    @MainActor private func shareLatestWorkout() {
-        guard let w = latestLiftWorkout,
-              let img = ShareCardRenderer.image(WorkoutShareCard(workout: w)) else { return }
-        Haptics.impact(.light)
-        shareItem = ShareImageItem(image: img)
+        .disabled(shareableWorkouts.isEmpty && !hasData)
     }
 
     @MainActor private func shareBlockSummary() {
@@ -497,6 +493,72 @@ struct DataView: View {
 }
 
 /// Quick bodyweight entry → writes to Apple Health.
+/// Picks a specific logged session to share as a card.
+private struct WorkoutPickerSheet: View {
+    let workouts: [LoggedWorkout]
+    @Environment(\.dismiss) private var dismiss
+    @State private var shareItem: ShareImageItem?
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.surface.ignoresSafeArea()
+                if workouts.isEmpty {
+                    EmptyStateView(systemImage: "dumbbell",
+                                   title: "No Workouts Yet",
+                                   message: "Log a session and you can share it from here.")
+                } else {
+                    ScrollView {
+                        VStack(spacing: DS.Spacing.sm) {
+                            ForEach(workouts) { row($0) }
+                        }
+                        .padding(DS.Spacing.lg)
+                    }
+                }
+            }
+            .navigationTitle("Share a Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }.foregroundStyle(Color.textSecondary)
+                }
+            }
+        }
+        .tint(.accent)
+        .preferredColorScheme(.dark)
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+    }
+
+    private func row(_ w: LoggedWorkout) -> some View {
+        Button {
+            if let img = ShareCardRenderer.image(WorkoutShareCard(workout: w)) {
+                Haptics.impact(.light)
+                shareItem = ShareImageItem(image: img)
+            }
+        } label: {
+            HStack(spacing: DS.Spacing.md) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(w.sessionName.isEmpty ? "Workout" : w.sessionName)
+                        .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.textPrimary)
+                    Text("Block \(String(format: "%02d", w.blockNumber)) · Week \(w.weekNumber) · \(w.date.formatted(.dateTime.month(.abbreviated).day()))")
+                        .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                }
+                Spacer(minLength: 0)
+                Text("\(Int(w.totalVolume).formatted()) lb")
+                    .font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textSecondary)
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(Color.accent)
+            }
+            .padding(DS.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct WeightEntrySheet: View {
     let onSave: (Double) -> Void
     @Environment(\.dismiss) private var dismiss

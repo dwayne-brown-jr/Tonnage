@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import TonnageCore
 
 /// The core screen: pick week + session + day-type, then log sets with last-week
@@ -24,6 +25,7 @@ struct TrainView: View {
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
     @State private var showRecovery = false
     @State private var showPlanBlock = false
+    @State private var shareItem: ShareImageItem?
 
     private var program: Program? { programs.first }
     private var sessions: [SessionTemplate] { program?.orderedSessions ?? [] }
@@ -81,6 +83,23 @@ struct TrainView: View {
         .sheet(isPresented: $showPlanBlock) {
             PlanBlockSheet(currentBlockNumber: currentBlock) { startNewBlock() }
         }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+    }
+
+    /// Share the session you just logged as a branded card.
+    @MainActor private func shareWorkoutButton(_ workout: LoggedWorkout) -> some View {
+        Button {
+            if let img = ShareCardRenderer.image(WorkoutShareCard(workout: workout)) {
+                Haptics.impact(.light)
+                shareItem = ShareImageItem(image: img)
+            }
+        } label: {
+            Label("Share Workout", systemImage: "square.and.arrow.up")
+                .font(.system(.subheadline, weight: .semibold)).foregroundStyle(Color.accent)
+                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
+                .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func startNewBlock() {
@@ -115,6 +134,7 @@ struct TrainView: View {
                     SessionNotesField(workout: workout)
                     if workout.completedSetCount > 0 {
                         saveSessionButton(workout)
+                        shareWorkoutButton(workout)
                     }
                 }
             case .activeRest, .fullRest:

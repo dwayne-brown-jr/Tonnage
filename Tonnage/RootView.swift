@@ -59,6 +59,7 @@ struct RootView: View {
                     presentAfterDismiss { showSplitPicker = true }
                 }
             }
+            .environment(health)   // covers don't reliably inherit @Observable env
         }
         .fullScreenCover(isPresented: $showProfile) {
             ProfileSetupView {

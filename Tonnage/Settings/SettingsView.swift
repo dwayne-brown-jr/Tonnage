@@ -73,6 +73,7 @@ struct SettingsView: View {
         }
         .fullScreenCover(isPresented: $showHowItWorks) {
             OnboardingView(onFinish: { showHowItWorks = false }, finishTitle: "Done")
+                .environment(health)   // covers don't reliably inherit @Observable env
         }
         .sheet(isPresented: $showProfileEditor) {
             ProfileSetupView(onFinish: { showProfileEditor = false }, finishTitle: "Done")

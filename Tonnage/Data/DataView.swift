@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import UIKit
 import TonnageCore
 
 /// DATA: block summary, adherence + PR feed, weekly volume, and per-exercise top-set
@@ -14,6 +15,7 @@ struct DataView: View {
     @State private var selectedExercise: String?
     @State private var scrubWeek: Int?
     @State private var showWeightEntry = false
+    @State private var shareItem: ShareImageItem?
 
     /// DATA is scoped to the active block so volume/progression don't mix mesocycles.
     private var scoped: [LoggedWorkout] { workouts.filter { $0.blockNumber == currentBlock } }
@@ -64,6 +66,50 @@ struct DataView: View {
         .sheet(isPresented: $showWeightEntry) {
             WeightEntrySheet { pounds in Task { await health.saveBodyMass(pounds: pounds) } }
         }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+    }
+
+    // MARK: Sharing
+
+    private var latestLiftWorkout: LoggedWorkout? {
+        workouts.filter { $0.dayType == .lift && $0.completedSetCount > 0 }
+            .max(by: { $0.date < $1.date })
+    }
+
+    private var shareMenu: some View {
+        Menu {
+            if latestLiftWorkout != nil {
+                Button { shareLatestWorkout() } label: { Label("Share Latest Workout", systemImage: "dumbbell.fill") }
+            }
+            if hasData {
+                Button { shareBlockSummary() } label: { Label("Share Block Check-In", systemImage: "chart.bar.fill") }
+            }
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.textSecondary)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(Color.surfaceElevated2))
+        }
+        .disabled(latestLiftWorkout == nil && !hasData)
+    }
+
+    @MainActor private func shareLatestWorkout() {
+        guard let w = latestLiftWorkout,
+              let img = ShareCardRenderer.image(WorkoutShareCard(workout: w)) else { return }
+        Haptics.impact(.light)
+        shareItem = ShareImageItem(image: img)
+    }
+
+    @MainActor private func shareBlockSummary() {
+        let card = BlockShareCard(block: currentBlock,
+                                  volume: Analytics.totalVolume(scoped),
+                                  sets: Analytics.totalSets(scoped),
+                                  sessions: Analytics.sessionsLogged(scoped),
+                                  prs: recentPRs)
+        guard let img = ShareCardRenderer.image(card) else { return }
+        Haptics.impact(.light)
+        shareItem = ShareImageItem(image: img)
     }
 
     private func syncSelection() {
@@ -74,7 +120,7 @@ struct DataView: View {
 
     // MARK: Header
 
-    private var header: some View { TonnageHeader("DATA") }
+    private var header: some View { TonnageHeader("DATA") { shareMenu } }
 
     // MARK: Summary
 

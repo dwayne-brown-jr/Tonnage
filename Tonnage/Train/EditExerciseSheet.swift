@@ -34,6 +34,9 @@ struct EditExerciseSheet: View {
     @State private var repRange: String
     @State private var rpeTarget: String
     @State private var notes: String
+    @State private var aiSwaps: [String] = []
+    @State private var aiLoading = false
+    @State private var aiError: String?
 
     init(store: TrainStore, exercise: LoggedExercise?, mode: ExerciseFormMode) {
         self.store = store
@@ -61,7 +64,7 @@ struct EditExerciseSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.lg) {
                         if mode != .edit { revertNote }
-                        if mode == .swap { swapSuggestions }
+                        if mode == .swap { swapSuggestions; coachSwapSection }
                         textField("Exercise", text: $name, placeholder: "e.g. Incline DB Press")
                         typeToggles
                         if !isCardio {
@@ -105,7 +108,7 @@ struct EditExerciseSheet: View {
             .foregroundStyle(Color.textTertiary)
     }
 
-    /// Same-muscle swap suggestions. Tap one to fill it in, or just type your own below.
+    /// Same-muscle swap suggestions (instant, rule-based). Tap to fill, or type your own.
     @ViewBuilder private var swapSuggestions: some View {
         let original = exercise?.name ?? ""
         let alts = ExerciseLibrary.alternatives(for: original)
@@ -116,29 +119,96 @@ struct EditExerciseSheet: View {
                 } else {
                     Text("Suggestions").dsLabel()
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: DS.Spacing.sm)],
-                          spacing: DS.Spacing.sm) {
-                    ForEach(alts, id: \.self) { alt in
-                        Button {
-                            name = alt
-                            isCompound = ExerciseLibrary.isCompound(alt)
-                            Haptics.selection()
-                        } label: {
-                            Text(alt)
-                                .font(.system(.subheadline, weight: .semibold))
-                                .foregroundStyle(name == alt ? Color.onAccent : Color.textPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .lineLimit(2).minimumScaleFactor(0.85)
-                                .padding(.horizontal, DS.Spacing.md).padding(.vertical, DS.Spacing.sm)
-                                .background(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                                    .fill(name == alt ? Color.accent : Color.surfaceElevated2))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                chipGrid(alts)
                 Text("Pick one, or type your own below.")
                     .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
             }
+        }
+    }
+
+    /// Optional AI pass — smarter, context-aware alternatives (factors in your goal +
+    /// limitations, and reaches beyond the built-in catalog).
+    @ViewBuilder private var coachSwapSection: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            if !aiSwaps.isEmpty {
+                Label("Coach suggests", systemImage: "sparkles")
+                    .font(.system(.caption2, weight: .bold)).textCase(.uppercase).kerning(0.6)
+                    .foregroundStyle(Color.accent)
+                chipGrid(aiSwaps)
+            }
+            Button { Task { await askCoach() } } label: {
+                HStack(spacing: DS.Spacing.sm) {
+                    if aiLoading { ProgressView().tint(Color.accent) }
+                    else { Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)) }
+                    Text(aiLoading ? "Asking Coach…"
+                         : (aiSwaps.isEmpty ? "Ask Coach for alternatives" : "Ask Coach again"))
+                        .font(.system(.subheadline, weight: .semibold))
+                }
+                .foregroundStyle(Color.accent)
+                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
+                .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(aiLoading)
+            if let aiError {
+                Text(aiError).font(.system(.caption2)).foregroundStyle(Color.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Shared tap-to-pick grid used by both the rule-based and AI suggestion lists.
+    private func chipGrid(_ names: [String]) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: DS.Spacing.sm)],
+                  spacing: DS.Spacing.sm) {
+            ForEach(names, id: \.self) { alt in
+                Button {
+                    name = alt
+                    isCompound = ExerciseLibrary.isCompound(alt)
+                    Haptics.selection()
+                } label: {
+                    Text(alt)
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(name == alt ? Color.onAccent : Color.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(2).minimumScaleFactor(0.85)
+                        .padding(.horizontal, DS.Spacing.md).padding(.vertical, DS.Spacing.sm)
+                        .background(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                            .fill(name == alt ? Color.accent : Color.surfaceElevated2))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @MainActor private func askCoach() async {
+        guard let key = CoachKey.resolved else {
+            aiError = "Add your Anthropic API key in Settings to ask Coach."
+            return
+        }
+        guard SharedKeyQuota.hasRemaining else { aiError = SharedKeyQuota.limitMessage; return }
+        aiError = nil
+        aiLoading = true
+        defer { aiLoading = false }
+        let original = exercise?.name ?? name
+        let system = CoachSwapSuggester.systemPrompt(for: ProfileStore.current)
+        let user = CoachSwapSuggester.userPrompt(exerciseName: original, isCardio: isCardio)
+        do {
+            let text = try await AnthropicClient(apiKey: key)
+                .send(system: system, history: [CoachMessage(role: .user, text: user)],
+                      model: .haiku, maxTokens: 300)
+            let names = CoachSwapSuggester.parse(text)
+            if names.isEmpty {
+                aiError = "Coach didn't return usable suggestions — try again."
+            } else {
+                aiSwaps = names
+                SharedKeyQuota.recordUse()
+                Haptics.selection()
+            }
+        } catch let error as CoachError {
+            aiError = error.errorDescription ?? "Coach request failed."
+        } catch {
+            aiError = error.localizedDescription
         }
     }
 

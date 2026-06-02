@@ -44,7 +44,9 @@ struct EditExerciseSheet: View {
         _isCardio = State(initialValue: exercise?.isCardio ?? false)
         _sets = State(initialValue: Double(exercise?.prescribedSets ?? 3))
         _repRange = State(initialValue: exercise?.repRange ?? "")
-        _rpeTarget = State(initialValue: mode == .swap ? "" : (exercise?.rpeTarget ?? ""))
+        // Keep the slot's effort target on a swap — you're changing the movement, not the
+        // set/rep scheme. Notes are movement-specific, so those reset.
+        _rpeTarget = State(initialValue: exercise?.rpeTarget ?? "")
         _notes = State(initialValue: mode == .swap ? "" : (exercise?.prescriptionNotes ?? ""))
     }
 
@@ -59,6 +61,7 @@ struct EditExerciseSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.lg) {
                         if mode != .edit { revertNote }
+                        if mode == .swap { swapSuggestions }
                         textField("Exercise", text: $name, placeholder: "e.g. Incline DB Press")
                         typeToggles
                         if !isCardio {
@@ -100,6 +103,43 @@ struct EditExerciseSheet: View {
         Label("Applies to Week \(week) only — reverts next week.", systemImage: "calendar.badge.clock")
             .font(.system(.caption, weight: .medium))
             .foregroundStyle(Color.textTertiary)
+    }
+
+    /// Same-muscle swap suggestions. Tap one to fill it in, or just type your own below.
+    @ViewBuilder private var swapSuggestions: some View {
+        let original = exercise?.name ?? ""
+        let alts = ExerciseLibrary.alternatives(for: original)
+        if !alts.isEmpty {
+            VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                if let group = ExerciseLibrary.muscleGroup(for: original) {
+                    Text("Same muscle · \(group.label)").dsLabel()
+                } else {
+                    Text("Suggestions").dsLabel()
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: DS.Spacing.sm)],
+                          spacing: DS.Spacing.sm) {
+                    ForEach(alts, id: \.self) { alt in
+                        Button {
+                            name = alt
+                            isCompound = ExerciseLibrary.isCompound(alt)
+                            Haptics.selection()
+                        } label: {
+                            Text(alt)
+                                .font(.system(.subheadline, weight: .semibold))
+                                .foregroundStyle(name == alt ? Color.onAccent : Color.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(2).minimumScaleFactor(0.85)
+                                .padding(.horizontal, DS.Spacing.md).padding(.vertical, DS.Spacing.sm)
+                                .background(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                                    .fill(name == alt ? Color.accent : Color.surfaceElevated2))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Text("Pick one, or type your own below.")
+                    .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+            }
+        }
     }
 
     private var typeToggles: some View {

@@ -404,3 +404,76 @@ public enum ExerciseLibrary {
             ])
     ]
 }
+
+/// Primary muscle group, used to suggest same-muscle swaps.
+public enum MuscleGroup: String, CaseIterable, Sendable, Identifiable {
+    case chest, back, shoulders, biceps, triceps, quads, hamstrings, glutes, calves, core, cardio
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .chest:      "Chest"
+        case .back:       "Back"
+        case .shoulders:  "Shoulders"
+        case .biceps:     "Biceps"
+        case .triceps:    "Triceps"
+        case .quads:      "Quads"
+        case .hamstrings: "Hamstrings"
+        case .glutes:     "Glutes"
+        case .calves:     "Calves"
+        case .core:       "Core"
+        case .cardio:     "Cardio"
+        }
+    }
+}
+
+public extension ExerciseLibrary {
+
+    /// Known movements per muscle group (compounds first). Every name also exists in the
+    /// directions catalog, so any suggested swap comes with full how-to directions.
+    static let exercisesByGroup: [MuscleGroup: [String]] = [
+        .chest:      ["Barbell Bench Press", "Incline Barbell Press", "Incline DB Press", "Cable Fly"],
+        .back:       ["Barbell Row", "Weighted Pull-up / Lat Pulldown", "Cable Lat Pulldown",
+                      "Seated Cable Row", "Chest-Supported Row", "Single-arm DB Row"],
+        .shoulders:  ["Overhead Press", "Seated Shoulder Press", "DB Lateral Raise",
+                      "Cable Face Pull", "Rear-delt Fly"],
+        .biceps:     ["Barbell or EZ-bar Curl", "EZ-bar or DB Curl", "DB Incline Curl"],
+        .triceps:    ["Cable Triceps Pushdown", "Overhead Triceps Extension"],
+        .quads:      ["Barbell Back Squat", "Front Squat", "Leg Press", "Bulgarian Split Squat",
+                      "Walking DB Lunges", "Leg Extension"],
+        .hamstrings: ["Romanian Deadlift", "Deadlift", "Leg Curl"],
+        .glutes:     ["Cable Pull-Through"],
+        .calves:     ["Standing Calf Raise", "Seated Calf Raise"],
+        .core:       ["Hanging Knee Raise", "Cable Wood Chop / Pallof"],
+        .cardio:     ["Stair Master", "Bike intervals"]
+    ]
+
+    /// The muscle group a movement belongs to (nil for unknown / custom names).
+    static func muscleGroup(for name: String) -> MuscleGroup? {
+        let n = normalize(name)
+        for (group, names) in exercisesByGroup where names.contains(where: { normalize($0) == n }) {
+            return group
+        }
+        return nil
+    }
+
+    /// Same-muscle alternatives to a movement (display names), excluding the movement
+    /// itself. Empty for movements we don't recognize.
+    static func alternatives(for name: String, limit: Int = 6) -> [String] {
+        guard let group = muscleGroup(for: name) else { return [] }
+        let n = normalize(name)
+        return Array((exercisesByGroup[group] ?? []).filter { normalize($0) != n }.prefix(limit))
+    }
+
+    /// Whether a known movement is a compound — used to prefill the swap form sensibly.
+    static func isCompound(_ name: String) -> Bool { compoundNames.contains(normalize(name)) }
+
+    private static let compoundNames: Set<String> = Set([
+        "Barbell Bench Press", "Incline Barbell Press", "Incline DB Press",
+        "Barbell Row", "Weighted Pull-up / Lat Pulldown", "Cable Lat Pulldown",
+        "Seated Cable Row", "Chest-Supported Row", "Single-arm DB Row",
+        "Overhead Press", "Seated Shoulder Press",
+        "Barbell Back Squat", "Front Squat", "Front Squat / Goblet Squat", "Leg Press",
+        "Bulgarian Split Squat", "Walking DB Lunges",
+        "Romanian Deadlift", "Deadlift"
+    ].map { ExerciseLibrary.normalize($0) })
+}

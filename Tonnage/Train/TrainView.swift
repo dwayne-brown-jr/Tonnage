@@ -17,9 +17,11 @@ struct TrainView: View {
     @AppStorage("train.focusDayType") private var focusDayType = DayType.lift.rawValue
     @State private var store = TrainStore()
     @State private var selectedBlock = 1
-    @State private var week = 1
-    @State private var sessionIndex = 0
-    @State private var dayType: DayType = .lift
+    // Persisted so a relaunch / force-quit resumes the same week, session, and day type
+    // instead of snapping back to Week 1.
+    @AppStorage("train.week") private var week = 1
+    @AppStorage("train.sessionIndex") private var sessionIndex = 0
+    @AppStorage("train.dayType") private var dayType: DayType = .lift
     @State private var expandedID: PersistentIdentifier?
     @State private var sessionSaved = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
@@ -59,6 +61,7 @@ struct TrainView: View {
         .task {
             store.configure(context)
             selectedBlock = currentBlock
+            if !sessions.indices.contains(sessionIndex) { sessionIndex = 0 }   // saved index may be stale
             store.readinessHoldsProgression = readiness.holdsProgression
             reload()
         }
@@ -73,7 +76,10 @@ struct TrainView: View {
         .onChange(of: week) { reload() }
         .onChange(of: sessionIndex) { reload() }
         .onChange(of: dayType) { reload() }
-        .onChange(of: sessions.count) { reload() }
+        .onChange(of: sessions.count) {
+            if !sessions.indices.contains(sessionIndex) { sessionIndex = 0 }
+            reload()
+        }
         .onChange(of: store.workout?.completedSetCount) {
             refreshWidget()                          // keep home-screen widget totals live
             PhoneConnectivity.shared.pushContext()   // mirror logged sets to the watch

@@ -13,19 +13,10 @@ struct ProfileFields: View {
     @AppStorage(ProfileStore.Key.goal) private var goalRaw = TrainingGoal.recomp.rawValue
     @AppStorage(ProfileStore.Key.experience) private var experienceRaw = ExperienceLevel.returning.rawValue
     @AppStorage(ProfileStore.Key.limitations) private var limitations = ""
-    @AppStorage(ProfileStore.Key.startingPoint) private var startingPointRaw = StartingPoint.unsure.rawValue
-    @AppStorage(ProfileStore.Key.priorityFocuses) private var priorityFocusesRaw = ""
-    @AppStorage(ProfileStore.Key.daysPerWeek) private var daysPerWeek = 0
-    @AppStorage(ProfileStore.Key.environment) private var environmentRaw = TrainingEnvironment.fullGym.rawValue
 
     private var sex: BiologicalSex { BiologicalSex(rawValue: sexRaw) ?? .unspecified }
     private var goal: TrainingGoal { TrainingGoal(rawValue: goalRaw) ?? .recomp }
     private var experience: ExperienceLevel { ExperienceLevel(rawValue: experienceRaw) ?? .returning }
-    private var startingPoint: StartingPoint { StartingPoint(rawValue: startingPointRaw) ?? .unsure }
-    private var environment: TrainingEnvironment { TrainingEnvironment(rawValue: environmentRaw) ?? .fullGym }
-    private var focuses: Set<BodyFocus> {
-        Set(priorityFocusesRaw.split(separator: ",").compactMap { BodyFocus(rawValue: String($0)) })
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.lg) {
@@ -70,25 +61,11 @@ struct ProfileFields: View {
                 chips(TrainingGoal.allCases, selected: goal, label: \.label) { goalRaw = $0.rawValue }
             }
 
-            field("STARTING POINT") {
-                startingPointPicker
-            }
-
             field("EXPERIENCE") {
                 chips(ExperienceLevel.allCases, selected: experience, label: \.label) { experienceRaw = $0.rawValue }
             }
 
-            field("TRAINING DAYS / WEEK") {
-                daysChips
-            }
-
-            field("EQUIPMENT") {
-                chips(TrainingEnvironment.allCases, selected: environment, label: \.label) { environmentRaw = $0.rawValue }
-            }
-
-            field("WHAT DO YOU WANT TO BRING UP?") {
-                focusChips
-            }
+            CoachingIntakeFields()
 
             field("ANYTHING TO TRAIN AROUND?") {
                 TextField("Injuries, limitations, things to avoid…", text: $limitations, axis: .vertical)
@@ -131,89 +108,6 @@ struct ProfileFields: View {
                 .buttonStyle(.plain)
             }
         }
-    }
-
-    // MARK: Intake pieces
-
-    /// Starting-point cards with plain-language definitions (single select).
-    private var startingPointPicker: some View {
-        VStack(spacing: DS.Spacing.sm) {
-            ForEach(StartingPoint.allCases) { sp in
-                let isSelected = startingPoint == sp
-                Button {
-                    startingPointRaw = sp.rawValue
-                    Haptics.selection()
-                } label: {
-                    HStack(alignment: .top, spacing: DS.Spacing.sm) {
-                        Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(isSelected ? Color.accent : Color.textTertiary)
-                            .padding(.top, 1)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(sp.label).font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.textPrimary)
-                            Text(sp.definition).font(.system(.caption2)).foregroundStyle(Color.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(DS.Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                        .fill(isSelected ? Color.accent.opacity(0.12) : Color.surfaceElevated2))
-                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                        .strokeBorder(isSelected ? Color.accent : Color.clear, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    /// Training days/week (2–6, single select).
-    private var daysChips: some View {
-        HStack(spacing: DS.Spacing.sm) {
-            ForEach(2...6, id: \.self) { n in
-                let isSelected = daysPerWeek == n
-                Button {
-                    daysPerWeek = n
-                    Haptics.selection()
-                } label: {
-                    Text("\(n)")
-                        .font(.system(.subheadline, weight: .bold))
-                        .foregroundStyle(isSelected ? Color.onAccent : Color.textPrimary)
-                        .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
-                        .background(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                            .fill(isSelected ? Color.accent : Color.surfaceElevated2))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    /// Muscles to bring up (multi-select).
-    private var focusChips: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: DS.Spacing.sm)], spacing: DS.Spacing.sm) {
-            ForEach(BodyFocus.allCases) { f in
-                let isOn = focuses.contains(f)
-                Button {
-                    toggleFocus(f)
-                    Haptics.selection()
-                } label: {
-                    Text(f.label)
-                        .font(.system(.subheadline, weight: .semibold))
-                        .foregroundStyle(isOn ? Color.onAccent : Color.textPrimary)
-                        .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm + 2)
-                        .background(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                            .fill(isOn ? Color.accent : Color.surfaceElevated2))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func toggleFocus(_ f: BodyFocus) {
-        var set = focuses
-        if set.contains(f) { set.remove(f) } else { set.insert(f) }
-        priorityFocusesRaw = BodyFocus.allCases.filter { set.contains($0) }.map(\.rawValue).joined(separator: ",")
     }
 
     // MARK: Numeric bindings (Int 0 == unset → blank field with placeholder)

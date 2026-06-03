@@ -14,9 +14,11 @@ struct RootView: View {
 
     @AppStorage("hasCompletedOnboarding") private var hasOnboarded = false
     @AppStorage("hasChosenSplit") private var hasChosenSplit = false
+    @AppStorage("hasAnsweredCoachingIntake") private var hasAnsweredIntake = false
     @State private var showOnboarding = false
     @State private var showProfile = false
     @State private var showSplitPicker = false
+    @State private var showCoachingUpdate = false
     /// True only during the genuine first-run sequence, so the split picker is offered to
     /// new users but never auto-shown to people who onboarded before this feature.
     @State private var firstRunFlow = false
@@ -38,6 +40,8 @@ struct RootView: View {
                 showOnboarding = true
             } else if !ProfileStore.isComplete {
                 showProfile = true   // onboarded before the profile existed → capture it now
+            } else if !hasAnsweredIntake {
+                showCoachingUpdate = true   // existing user → one-time "what's new" intake
             }
             if health.hasRequested {
                 await health.refresh()
@@ -64,6 +68,7 @@ struct RootView: View {
         .fullScreenCover(isPresented: $showProfile) {
             ProfileSetupView {
                 showProfile = false
+                hasAnsweredIntake = true   // the profile form already includes the coaching intake
                 // First-run only: chain into the split picker after the profile step.
                 if firstRunFlow && !hasChosenSplit {
                     presentAfterDismiss { showSplitPicker = true }
@@ -72,6 +77,12 @@ struct RootView: View {
         }
         .fullScreenCover(isPresented: $showSplitPicker) {
             SplitPickerSheet { firstRunFlow = false }
+        }
+        .fullScreenCover(isPresented: $showCoachingUpdate) {
+            CoachingUpdateView {
+                hasAnsweredIntake = true
+                showCoachingUpdate = false
+            }
         }
     }
 

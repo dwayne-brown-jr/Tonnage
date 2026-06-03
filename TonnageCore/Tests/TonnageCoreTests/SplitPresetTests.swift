@@ -60,4 +60,14 @@ struct SplitPresetTests {
             #expect(orders == Array(0..<orders.count))
         }
     }
+
+    @Test("Recommends a split from training days/week")
+    func recommendation() {
+        #expect(SplitPreset.recommended(forDaysPerWeek: 2) == .fullBody)
+        #expect(SplitPreset.recommended(forDaysPerWeek: 3) == .fullBody)
+        #expect(SplitPreset.recommended(forDaysPerWeek: 4) == .upperLower)
+        #expect(SplitPreset.recommended(forDaysPerWeek: 5) == .upperLower)
+        #expect(SplitPreset.recommended(forDaysPerWeek: 6) == .pushPullLegs)
+        #expect(SplitPreset.recommended(forDaysPerWeek: 0) == nil)   // unset
+    }
 }

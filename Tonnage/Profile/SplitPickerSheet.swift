@@ -16,6 +16,7 @@ struct SplitPickerSheet: View {
 
     @AppStorage(ProfileStore.Key.split) private var splitRaw = SplitPreset.upperLower.rawValue
     @AppStorage("hasChosenSplit") private var hasChosenSplit = false
+    @AppStorage(ProfileStore.Key.daysPerWeek) private var daysPerWeek = 0
 
     @State private var selected: SplitPreset = .upperLower
     @State private var confirming = false
@@ -23,6 +24,8 @@ struct SplitPickerSheet: View {
     private var program: Program? { programs.first }
     private var current: SplitPreset { SplitPreset(rawValue: splitRaw) ?? .upperLower }
     private var hasData: Bool { !workouts.isEmpty }
+    /// The split that fits the athlete's days/week — pre-selected on first pick.
+    private var recommended: SplitPreset? { SplitPreset.recommended(forDaysPerWeek: daysPerWeek) }
 
     var body: some View {
         NavigationStack {
@@ -58,7 +61,7 @@ struct SplitPickerSheet: View {
         }
         .tint(.accent)
         .preferredColorScheme(.dark)
-        .onAppear { selected = current }
+        .onAppear { selected = (hasChosenSplit ? nil : recommended) ?? current }
     }
 
     private func presetCard(_ preset: SplitPreset) -> some View {
@@ -74,6 +77,12 @@ struct SplitPickerSheet: View {
                             .foregroundStyle(Color.textTertiary)
                             .padding(.horizontal, 5).padding(.vertical, 2)
                             .background(Capsule().fill(Color.surfaceElevated2))
+                    }
+                    if preset == recommended {
+                        Text("RECOMMENDED").font(.system(.caption2, weight: .heavy)).kerning(0.5)
+                            .foregroundStyle(Color.onAccent)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.accent))
                     }
                     Spacer(minLength: 0)
                     Text("\(preset.daysPerWeek) days/wk")

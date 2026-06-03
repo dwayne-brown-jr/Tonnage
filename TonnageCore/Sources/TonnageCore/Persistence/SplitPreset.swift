@@ -41,6 +41,17 @@ public enum SplitPreset: String, CaseIterable, Codable, Sendable, Identifiable {
         makeSessions().map { SessionSpec(name: $0.name, focus: $0.subtitle) }
     }
 
+    /// The preset that best fits a given training-days/week (nil when unset).
+    /// 2–3 → Full Body, 4–5 → Upper/Lower, 6+ → Push/Pull/Legs.
+    public static func recommended(forDaysPerWeek days: Int) -> SplitPreset? {
+        switch days {
+        case 2...3: return .fullBody
+        case 4...5: return .upperLower
+        case 6...:  return .pushPullLegs
+        default:    return nil
+        }
+    }
+
     public func makeSessions() -> [SessionTemplate] {
         switch self {
         case .fullBody:     return Self.fullBodySessions()

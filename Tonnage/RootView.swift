@@ -15,10 +15,12 @@ struct RootView: View {
     @AppStorage("hasCompletedOnboarding") private var hasOnboarded = false
     @AppStorage("hasChosenSplit") private var hasChosenSplit = false
     @AppStorage("hasAnsweredCoachingIntake") private var hasAnsweredIntake = false
+    @AppStorage("currentBlock") private var currentBlock = 1
     @State private var showOnboarding = false
     @State private var showProfile = false
     @State private var showSplitPicker = false
     @State private var showCoachingUpdate = false
+    @State private var showBuildPlan = false
     /// True only during the genuine first-run sequence, so the split picker is offered to
     /// new users but never auto-shown to people who onboarded before this feature.
     @State private var firstRunFlow = false
@@ -77,7 +79,13 @@ struct RootView: View {
             }
         }
         .fullScreenCover(isPresented: $showSplitPicker) {
-            SplitPickerSheet { firstRunFlow = false }
+            SplitPickerSheet {
+                // First-run: offer Coach to build a personalized starting plan.
+                if firstRunFlow { presentAfterDismiss { showBuildPlan = true } }
+            }
+        }
+        .fullScreenCover(isPresented: $showBuildPlan, onDismiss: { firstRunFlow = false }) {
+            PlanBlockSheet(currentBlockNumber: currentBlock, mode: .buildInitial) { }
         }
         .fullScreenCover(isPresented: $showCoachingUpdate) {
             CoachingUpdateView {

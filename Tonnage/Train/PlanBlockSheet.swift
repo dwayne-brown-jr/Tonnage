@@ -14,7 +14,7 @@ struct PlanBlockSheet: View {
     /// just reloads the current view (block/week unchanged).
     var onCommit: () -> Void
 
-    enum PlanMode { case nextBlock, replanCurrent }
+    enum PlanMode { case nextBlock, replanCurrent, buildInitial }
 
     @Query private var workouts: [LoggedWorkout]
     @Query(sort: \Program.createdAt) private var programs: [Program]
@@ -32,14 +32,46 @@ struct PlanBlockSheet: View {
 
     private enum Phase {
         case idle
+        case intro      // buildInitial only: opt-in before spending an AI call
         case loading
         case preview(BlockPlan)
         case error(String)
     }
 
-    private var isReplan: Bool { mode == .replanCurrent }
-    private var targetBlock: Int { isReplan ? currentBlockNumber : currentBlockNumber + 1 }
+    private var targetsCurrentBlock: Bool { mode != .nextBlock }
+    private var targetBlock: Int { targetsCurrentBlock ? currentBlockNumber : currentBlockNumber + 1 }
     private var blockLabel: String { String(format: "%02d", targetBlock) }
+    private var sheetTitle: String {
+        switch mode {
+        case .nextBlock:     return "Plan Block \(blockLabel)"
+        case .replanCurrent: return "Re-plan Block \(blockLabel)"
+        case .buildInitial:  return "Your Starting Plan"
+        }
+    }
+    private var loadingTitle: String {
+        switch mode {
+        case .nextBlock:     return "Coach is drafting Block \(blockLabel)"
+        case .replanCurrent: return "Coach is re-planning Block \(blockLabel)"
+        case .buildInitial:  return "Coach is building your plan"
+        }
+    }
+    private var confirmTitle: String {
+        switch mode {
+        case .nextBlock:     return "Use this plan for Block \(blockLabel)?"
+        case .replanCurrent: return "Re-plan Block \(blockLabel)?"
+        case .buildInitial:  return "Use this starting plan?"
+        }
+    }
+    private var disclaimerText: String {
+        switch mode {
+        case .nextBlock:
+            return "Committing rewrites the program template. Past logged workouts keep their original exercise names — only future weeks adopt the new plan."
+        case .replanCurrent:
+            return "Committing rewrites your current block's exercises. Your logged sets are kept — the new exercises apply to sessions you haven't logged yet."
+        case .buildInitial:
+            return "This becomes your starting program. You can re-plan or edit any exercise anytime."
+        }
+    }
     private var program: Program? { programs.first }
     private var prs: [PRMoment] { PersonalRecords.recentPRs(in: workouts, limit: 15) }
     private var adherence: BlockAdherence? {
@@ -53,12 +85,13 @@ struct PlanBlockSheet: View {
             ZStack {
                 Color.surface.ignoresSafeArea()
                 switch phase {
+                case .intro:                introView
                 case .idle, .loading:       loadingView
                 case .preview(let plan):    previewView(plan)
                 case .error(let message):   errorView(message)
                 }
             }
-            .navigationTitle("\(isReplan ? "Re-plan" : "Plan") Block \(blockLabel)")
+            .navigationTitle(sheetTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -67,10 +100,14 @@ struct PlanBlockSheet: View {
             }
         }
         .tint(.accent)
-        .task { if case .idle = phase { await loadPlan() } }
+        .task {
+            guard case .idle = phase else { return }
+            if mode == .buildInitial { phase = .intro }   // opt-in first, don't auto-spend
+            else { await loadPlan() }
+        }
         .preferredColorScheme(.dark)
         .confirmationDialog(
-            "\(isReplan ? "Re-plan" : "Use this plan for") Block \(blockLabel)?",
+            confirmTitle,
             isPresented: Binding(get: { pendingPlan != nil },
                                  set: { if !$0 { pendingPlan = nil } }),
             titleVisibility: .visible,
@@ -95,7 +132,7 @@ struct PlanBlockSheet: View {
         VStack(spacing: DS.Spacing.lg) {
             ProgressView().tint(Color.accent).scaleEffect(1.4)
             VStack(spacing: DS.Spacing.xs) {
-                Text("Coach is \(isReplan ? "re-planning" : "drafting") Block \(blockLabel)")
+                Text(loadingTitle)
                     .font(DSFont.title).foregroundStyle(Color.textPrimary)
                 Text("Reading your profile, PRs, adherence, and current program…")
                     .font(DSFont.callout).foregroundStyle(Color.textSecondary)
@@ -241,12 +278,35 @@ struct PlanBlockSheet: View {
     }
 
     private var disclaimer: some View {
-        Text(isReplan
-             ? "Committing rewrites your current block's exercises. Your logged sets are kept — the new exercises apply to sessions you haven't logged yet."
-             : "Committing rewrites the program template. Past logged workouts keep their original exercise names — only future weeks adopt the new plan.")
+        Text(disclaimerText)
             .font(.system(.caption2))
             .foregroundStyle(Color.textTertiary)
             .padding(.horizontal, DS.Spacing.sm)
+    }
+
+    private var introView: some View {
+        VStack(spacing: DS.Spacing.lg) {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 42, weight: .bold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Color.accent)
+            VStack(spacing: DS.Spacing.xs) {
+                Text("Build your starting plan").font(DSFont.title).foregroundStyle(Color.textPrimary)
+                Text("Coach will tailor your exercises to your starting point, the muscles you want to grow, and your equipment — instead of a one-size template.")
+                    .font(DSFont.callout).foregroundStyle(Color.textSecondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            }
+            Button { Task { await loadPlan() } } label: {
+                Label("Build My Plan", systemImage: "sparkles")
+                    .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                    .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            Text("Or tap Cancel to keep the standard template.")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+        }
+        .padding(DS.Spacing.xl)
     }
 
     private func actionsBar(_ plan: BlockPlan) -> some View {
@@ -293,7 +353,7 @@ struct PlanBlockSheet: View {
             prs: prs,
             adherence: adherence,
             readinessAvg: nil,
-            replanCurrent: isReplan
+            replanCurrent: targetsCurrentBlock
         )
         do {
             let text = try await AnthropicClient(apiKey: key).send(

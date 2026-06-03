@@ -79,6 +79,15 @@ public enum CoachContext {
             }
         }
 
+        // Today's completed lift sessions — so the coach never tells them to redo one, or
+        // to rest instead of a session they've already finished today.
+        let trainedToday = recentWorkouts
+            .filter { Calendar.current.isDateInToday($0.date) && $0.dayType == .lift && $0.completedSetCount > 0 }
+            .map(\.sessionName)
+        if !trainedToday.isEmpty {
+            lines.append("ALREADY TRAINED TODAY: \(trainedToday.joined(separator: ", ")) — that session is done and logged. Do NOT tell them to do it again or to rest instead of it; acknowledge it's complete.")
+        }
+
         // Readiness (drives whether to push or pull back today)
         if let r = readiness, r.band != .unknown, let score = r.score {
             let drivers = r.drivers.map(\.label).joined(separator: "; ")

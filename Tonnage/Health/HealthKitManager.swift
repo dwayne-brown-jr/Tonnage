@@ -218,15 +218,21 @@ final class HealthKitManager {
     }
 
     private func loadTrainedYesterday() async {
-        let start = Calendar.current.date(byAdding: .hour, value: -36, to: .now)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
+        // Yesterday ONLY (start-of-yesterday … start-of-today). The old 36h window caught
+        // today's workout too, so logging today's session dropped today's readiness for
+        // the work you just did. Readiness is an overnight-recovery read — today's
+        // training shouldn't change it.
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: .now)
+        guard let yesterdayStart = cal.date(byAdding: .day, value: -1, to: startOfToday) else { return }
+        let predicate = HKQuery.predicateForSamples(withStart: yesterdayStart, end: startOfToday)
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.workout(predicate)],
             sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)],
             limit: 20
         )
         guard let workouts = try? await descriptor.result(for: store) else { return }
-        trainedYesterday = workouts.contains { $0.duration >= 600 }   // any session ≥ 10 min in the last 36h
+        trainedYesterday = workouts.contains { $0.duration >= 600 }   // any session ≥ 10 min yesterday
     }
 
     // MARK: Recovery trend series (for the Recovery screen)

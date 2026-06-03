@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import TonnageCore
 
 @Suite("Coach context")
@@ -49,6 +50,23 @@ struct CoachContextTests {
         #expect(text.contains("Barbell Bench Press: 3×5-7, 2 reps left (compound)"))
         #expect(text.contains("Barbell Row: 3×8-10"))
         #expect(!text.contains("RPE"))   // reps-left language only
+    }
+
+    @Test("Flags a session trained today so the coach won't tell them to redo it")
+    func alreadyTrainedToday() {
+        let todayText = CoachContext.build(program: nil, currentWeek: 2,
+                                           recentWorkouts: [benchWorkout()], activities: [],
+                                           recovery: CoachRecovery())
+        #expect(todayText.contains("ALREADY TRAINED TODAY"))
+        #expect(todayText.contains("Upper A"))
+
+        // A workout from a prior day must not trigger it.
+        let past = benchWorkout()
+        past.date = Calendar.current.date(byAdding: .day, value: -2, to: .now)!
+        let pastText = CoachContext.build(program: nil, currentWeek: 2,
+                                          recentWorkouts: [past], activities: [],
+                                          recovery: CoachRecovery())
+        #expect(!pastText.contains("ALREADY TRAINED TODAY"))
     }
 
     @Test("Empty recovery is stated explicitly")

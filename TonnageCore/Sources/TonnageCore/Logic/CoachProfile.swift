@@ -124,6 +124,18 @@ public enum StartingPoint: String, CaseIterable, Sendable, Identifiable, Hashabl
         case .unsure:       "to be determined"
         }
     }
+
+    /// The matching Tonnage Fuel `Goal` raw value (bulk / recomp / cut / maintain) — shared
+    /// across the App Group so Fuel can suggest the right nutrition goal. nil when unsure.
+    public var fuelGoalRaw: String? {
+        switch self {
+        case .skinny:                    "bulk"
+        case .skinnyFat:                 "recomp"
+        case .overweight, .muscularSoft: "cut"
+        case .inShape:                   "maintain"
+        case .unsure:                    nil
+        }
+    }
 }
 
 /// Where the athlete trains — drives exercise selection.

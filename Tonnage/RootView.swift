@@ -36,6 +36,7 @@ struct RootView: View {
         .animation(DS.spring, value: restTimer.isVisible)
         .onChange(of: scenePhase) { _, phase in restTimer.handleScenePhase(phase) }
         .task {
+            SharedProfile.syncFromProfile()   // mirror starting point to Tonnage Fuel
             if !hasOnboarded {
                 showOnboarding = true
             } else if !ProfileStore.isComplete {

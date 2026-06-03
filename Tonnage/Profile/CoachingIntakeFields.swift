@@ -67,6 +67,7 @@ struct CoachingIntakeFields: View {
                 let isSelected = startingPoint == sp
                 Button {
                     startingPointRaw = sp.rawValue
+                    SharedProfile.write(sp)   // share with Tonnage Fuel
                     Haptics.selection()
                 } label: {
                     HStack(alignment: .top, spacing: DS.Spacing.sm) {

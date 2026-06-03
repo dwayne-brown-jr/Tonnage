@@ -108,10 +108,16 @@ struct EditExerciseSheet: View {
             .foregroundStyle(Color.textTertiary)
     }
 
+    /// Names already in the current session — excluded from suggestions so they're
+    /// context-specific (and never offer something you're already doing).
+    private var sessionExerciseNames: Set<String> {
+        Set(exercise?.workout?.orderedExercises.map(\.name) ?? [])
+    }
+
     /// Same-muscle swap suggestions (instant, rule-based). Tap to fill, or type your own.
     @ViewBuilder private var swapSuggestions: some View {
         let original = exercise?.name ?? ""
-        let alts = ExerciseLibrary.alternatives(for: original)
+        let alts = ExerciseLibrary.alternatives(for: original, excluding: sessionExerciseNames)
         if !alts.isEmpty {
             VStack(alignment: .leading, spacing: DS.Spacing.sm) {
                 if let group = ExerciseLibrary.muscleGroup(for: original) {
@@ -191,8 +197,11 @@ struct EditExerciseSheet: View {
         aiLoading = true
         defer { aiLoading = false }
         let original = exercise?.name ?? name
+        // Avoid what's already in the session and anything we already showed, so
+        // "Ask Coach again" returns genuinely new options.
+        let avoid = Array(sessionExerciseNames) + aiSwaps
         let system = CoachSwapSuggester.systemPrompt(for: ProfileStore.current)
-        let user = CoachSwapSuggester.userPrompt(exerciseName: original, isCardio: isCardio)
+        let user = CoachSwapSuggester.userPrompt(exerciseName: original, isCardio: isCardio, avoid: avoid)
         do {
             let text = try await AnthropicClient(apiKey: key)
                 .send(system: system, history: [CoachMessage(role: .user, text: user)],

@@ -24,6 +24,17 @@ struct ExerciseSwapTests {
         #expect(alts.allSatisfy { ExerciseLibrary.muscleGroup(for: $0) == .quads })
     }
 
+    @Test("Excluding in-session exercises makes suggestions context-specific")
+    func excludesInSession() {
+        let all = ExerciseLibrary.alternatives(for: "Barbell Bench Press")
+        let filtered = ExerciseLibrary.alternatives(for: "Barbell Bench Press",
+                                                    excluding: ["Incline DB Press", "Cable Fly"])
+        #expect(!filtered.contains("Incline DB Press"))
+        #expect(!filtered.contains("Cable Fly"))
+        #expect(filtered.count <= all.count)
+        #expect(filtered.allSatisfy { ExerciseLibrary.muscleGroup(for: $0) == .chest })
+    }
+
     @Test("Unknown movements yield no suggestions (manual entry only)")
     func unknownYieldsNone() {
         #expect(ExerciseLibrary.alternatives(for: "Zercher Carry").isEmpty)

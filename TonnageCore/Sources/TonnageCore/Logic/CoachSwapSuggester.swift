@@ -17,9 +17,15 @@ public enum CoachSwapSuggester {
         """
     }
 
-    public static func userPrompt(exerciseName: String, isCardio: Bool) -> String {
+    public static func userPrompt(exerciseName: String, isCardio: Bool, avoid: [String] = []) -> String {
         let kind = isCardio ? "conditioning option" : "movement"
-        return "Suggest 5 alternatives to \"\(exerciseName)\" — the same \(kind), training the same primary muscles. Return the <swaps> JSON array only."
+        var s = "Suggest 5 alternatives to \"\(exerciseName)\" — the same \(kind), training the same primary muscles. Favor variety in equipment and setup (mix barbell, dumbbell, cable, machine, bodyweight)."
+        let list = avoid.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if !list.isEmpty {
+            s += " Do NOT suggest any of these (already in the program or already shown): \(list.joined(separator: ", "))."
+        }
+        s += " Return the <swaps> JSON array only."
+        return s
     }
 
     /// Extract the exercise names from the `<swaps>` array. Trims, de-dupes, caps at 6.

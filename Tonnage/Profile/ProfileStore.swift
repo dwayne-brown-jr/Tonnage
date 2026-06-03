@@ -15,6 +15,10 @@ enum ProfileStore {
         static let experience = "profile.experience"
         static let limitations = "profile.limitations"
         static let split = "profile.split"
+        static let startingPoint = "profile.startingPoint"
+        static let priorityFocuses = "profile.priorityFocuses"   // comma-joined raw values
+        static let daysPerWeek = "profile.daysPerWeek"
+        static let environment = "profile.environment"
     }
 
     /// The athlete's chosen training split (drives the seeded program + coach framing).
@@ -25,6 +29,8 @@ enum ProfileStore {
 
     static var current: CoachProfile {
         let d = UserDefaults.standard
+        let focuses = (d.string(forKey: Key.priorityFocuses) ?? "")
+            .split(separator: ",").compactMap { BodyFocus(rawValue: String($0)) }
         return CoachProfile(
             name: d.string(forKey: Key.name) ?? "",
             ageYears: d.integer(forKey: Key.age),
@@ -33,7 +39,11 @@ enum ProfileStore {
             bodyweightLb: d.integer(forKey: Key.weight),
             goal: TrainingGoal(rawValue: d.string(forKey: Key.goal) ?? "") ?? .recomp,
             experience: ExperienceLevel(rawValue: d.string(forKey: Key.experience) ?? "") ?? .returning,
-            limitations: d.string(forKey: Key.limitations) ?? ""
+            limitations: d.string(forKey: Key.limitations) ?? "",
+            startingPoint: StartingPoint(rawValue: d.string(forKey: Key.startingPoint) ?? "") ?? .unsure,
+            priorityFocuses: focuses,
+            daysPerWeek: d.integer(forKey: Key.daysPerWeek),
+            environment: TrainingEnvironment(rawValue: d.string(forKey: Key.environment) ?? "") ?? .fullGym
         )
     }
 

@@ -23,6 +23,7 @@ public enum CoachBlockPlanner {
 
         return """
         You are \(who)'s strength coach. \(profile.experience.coachPhrase)\(statsPart), \(count)-day split, training for \(profile.goal.coachPhrase).
+        \(profile.coachingClause) Weight the accessory selection toward the muscles they want to bring up, and keep every movement doable with their equipment.
         TASK: Plan the next 5-week block. Keep main barbell lifts constant across blocks so progress is measurable. Rotate accessory lifts based on what stalled or what's underdeveloped. Address weak points the prior block surfaced. Match the volume profile (sets × rep range) to the goal — leaner ranges for strength, higher reps for size.
         PHASE STRUCTURE inside every block: Week 1 RAMP (3–4 reps left), W2–3 BUILD (2 reps left), W4 PEAK (0–1 reps left), W5 DELOAD. You don't author per-week prescriptions — the engine derives those from the block-level rep range and rpe target.
         RULES:

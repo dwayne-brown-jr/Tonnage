@@ -36,6 +36,7 @@ public enum CoachBlockPlanner {
           - `{"type":"swapped","from":"<prior exercise name>"}` if you're replacing one
           - `{"type":"new"}` if you're adding an accessory the prior block didn't have
         - One-sentence `rationale` per exercise grounded in the data: PR trend, stall, weak point, recovery.
+        \(CoachingPrinciples.evidenceBased)
         OUTPUT FORMAT — STRICT:
         Wrap the JSON in <block_plan> tags. No prose outside. No markdown fences. No code blocks. Just <block_plan>{...}</block_plan>.
         Return all \(count) sessions in the same order. Schema:

@@ -107,4 +107,17 @@ struct BlockPlanTests {
         #expect(prompt.contains("Lower B"))
         #expect(prompt.contains("reps-left"))
     }
+
+    @Test("userPrompt switches framing between next-block and re-plan-current")
+    func userPromptReplanFraming() {
+        let next = CoachBlockPlanner.userPrompt(currentBlockNumber: 2, program: nil, prs: [],
+                                                adherence: nil, readinessAvg: nil)
+        let replan = CoachBlockPlanner.userPrompt(currentBlockNumber: 2, program: nil, prs: [],
+                                                  adherence: nil, readinessAvg: nil, replanCurrent: true)
+        #expect(next.contains("NEXT BLOCK"))
+        #expect(next.contains("Next block number: 3"))
+        #expect(replan.contains("RE-PLAN THE CURRENT BLOCK"))
+        #expect(replan.contains("Re-plan Block 2"))
+        #expect(!replan.contains("Next block number"))
+    }
 }

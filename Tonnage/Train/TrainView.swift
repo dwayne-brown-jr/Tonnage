@@ -27,6 +27,7 @@ struct TrainView: View {
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
     @State private var showRecovery = false
     @State private var showPlanBlock = false
+    @State private var showReplanBlock = false
     @State private var shareItem: ShareImageItem?
 
     private var program: Program? { programs.first }
@@ -88,6 +89,9 @@ struct TrainView: View {
         .sheet(isPresented: $showRecovery) { RecoveryView() }
         .sheet(isPresented: $showPlanBlock) {
             PlanBlockSheet(currentBlockNumber: currentBlock) { startNewBlock() }
+        }
+        .sheet(isPresented: $showReplanBlock) {
+            PlanBlockSheet(currentBlockNumber: currentBlock, mode: .replanCurrent) { reload() }
         }
         .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
     }
@@ -214,6 +218,9 @@ struct TrainView: View {
             Button { showPlanBlock = true } label: {
                 Label("Plan Block \(String(format: "%02d", currentBlock + 1)) (Coach)",
                       systemImage: "brain.head.profile")
+            }
+            Button { showReplanBlock = true } label: {
+                Label("Re-plan This Block (Coach)", systemImage: "arrow.triangle.2.circlepath")
             }
             Button { startNewBlock() } label: {
                 Label("Start Empty Block", systemImage: "plus.circle")

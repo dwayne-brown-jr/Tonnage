@@ -8,9 +8,13 @@ import TonnageCore
 /// ExerciseTemplates so the next block runs on the new layout.
 struct PlanBlockSheet: View {
     let currentBlockNumber: Int
-    /// Called after the plan is committed to SwiftData — TrainView wires this to its
-    /// existing `startNewBlock()` so currentBlock advances + week resets to 1.
+    /// Plan the next block (default) or re-plan the current one.
+    var mode: PlanMode = .nextBlock
+    /// Called after the plan commits. Next-block → TrainView's startNewBlock(); re-plan →
+    /// just reloads the current view (block/week unchanged).
     var onCommit: () -> Void
+
+    enum PlanMode { case nextBlock, replanCurrent }
 
     @Query private var workouts: [LoggedWorkout]
     @Query(sort: \Program.createdAt) private var programs: [Program]
@@ -33,7 +37,9 @@ struct PlanBlockSheet: View {
         case error(String)
     }
 
-    private var nextBlockNumber: Int { currentBlockNumber + 1 }
+    private var isReplan: Bool { mode == .replanCurrent }
+    private var targetBlock: Int { isReplan ? currentBlockNumber : currentBlockNumber + 1 }
+    private var blockLabel: String { String(format: "%02d", targetBlock) }
     private var program: Program? { programs.first }
     private var prs: [PRMoment] { PersonalRecords.recentPRs(in: workouts, limit: 15) }
     private var adherence: BlockAdherence? {
@@ -52,7 +58,7 @@ struct PlanBlockSheet: View {
                 case .error(let message):   errorView(message)
                 }
             }
-            .navigationTitle("Plan Block \(String(format: "%02d", nextBlockNumber))")
+            .navigationTitle("\(isReplan ? "Re-plan" : "Plan") Block \(blockLabel)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -64,7 +70,7 @@ struct PlanBlockSheet: View {
         .task { if case .idle = phase { await loadPlan() } }
         .preferredColorScheme(.dark)
         .confirmationDialog(
-            "Use this plan for Block \(String(format: "%02d", nextBlockNumber))?",
+            "\(isReplan ? "Re-plan" : "Use this plan for") Block \(blockLabel)?",
             isPresented: Binding(get: { pendingPlan != nil },
                                  set: { if !$0 { pendingPlan = nil } }),
             titleVisibility: .visible,
@@ -89,9 +95,9 @@ struct PlanBlockSheet: View {
         VStack(spacing: DS.Spacing.lg) {
             ProgressView().tint(Color.accent).scaleEffect(1.4)
             VStack(spacing: DS.Spacing.xs) {
-                Text("Coach is drafting Block \(String(format: "%02d", nextBlockNumber))")
+                Text("Coach is \(isReplan ? "re-planning" : "drafting") Block \(blockLabel)")
                     .font(DSFont.title).foregroundStyle(Color.textPrimary)
-                Text("Reading your PRs, adherence, and current program…")
+                Text("Reading your profile, PRs, adherence, and current program…")
                     .font(DSFont.callout).foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
             }
@@ -235,7 +241,9 @@ struct PlanBlockSheet: View {
     }
 
     private var disclaimer: some View {
-        Text("Committing rewrites the program template. Past logged workouts keep their original exercise names — only future weeks adopt the new plan.")
+        Text(isReplan
+             ? "Committing rewrites your current block's exercises. Your logged sets are kept — the new exercises apply to sessions you haven't logged yet."
+             : "Committing rewrites the program template. Past logged workouts keep their original exercise names — only future weeks adopt the new plan.")
             .font(.system(.caption2))
             .foregroundStyle(Color.textTertiary)
             .padding(.horizontal, DS.Spacing.sm)
@@ -284,7 +292,8 @@ struct PlanBlockSheet: View {
             program: program,
             prs: prs,
             adherence: adherence,
-            readinessAvg: nil
+            readinessAvg: nil,
+            replanCurrent: isReplan
         )
         do {
             let text = try await AnthropicClient(apiKey: key).send(

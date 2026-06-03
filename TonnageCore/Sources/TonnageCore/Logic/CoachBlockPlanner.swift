@@ -78,11 +78,17 @@ public enum CoachBlockPlanner {
         program: Program?,
         prs: [PRMoment],
         adherence: BlockAdherence?,
-        readinessAvg: Int?
+        readinessAvg: Int?,
+        replanCurrent: Bool = false
     ) -> String {
         var lines: [String] = []
-        lines.append("# CONTEXT FOR NEXT BLOCK")
-        lines.append("Next block number: \(currentBlockNumber + 1).")
+        if replanCurrent {
+            lines.append("# RE-PLAN THE CURRENT BLOCK")
+            lines.append("Re-plan Block \(currentBlockNumber) to fit this athlete's profile (goal, starting point, priority muscles, equipment). Keep the main barbell lifts; rotate accessories to match their priorities and available gear.")
+        } else {
+            lines.append("# CONTEXT FOR NEXT BLOCK")
+            lines.append("Next block number: \(currentBlockNumber + 1).")
+        }
 
         if let adherence {
             let pct = Int((adherence.completionPct * 100).rounded())
@@ -111,7 +117,9 @@ public enum CoachBlockPlanner {
             }
         }
 
-        lines.append("\nReturn the next block's plan in the <block_plan> JSON format specified.")
+        lines.append(replanCurrent
+            ? "\nReturn the re-planned block in the <block_plan> JSON format specified."
+            : "\nReturn the next block's plan in the <block_plan> JSON format specified.")
         return lines.joined(separator: "\n")
     }
 

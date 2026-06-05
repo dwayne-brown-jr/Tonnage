@@ -20,15 +20,16 @@ struct AdherenceTests {
         #expect(a.completionPct == 3.0 / 20.0)
     }
 
-    @Test("Rest-day logs count toward sessions but not training days")
-    func restDaysCount() {
+    @Test("Rest-day logs are neutral — not counted as sessions or training days")
+    func restDaysAreNeutral() {
         let logs = [
-            rest(week: 1, session: "Active Recovery", date: day(0), type: .activeRest),
-            rest(week: 1, session: "Full Rest",        date: day(1), type: .fullRest),
+            rest(week: 1, session: "Rest Day", date: day(0), type: .activeRest),
+            rest(week: 1, session: "Rest Day", date: day(1), type: .fullRest),
+            lift(week: 1, session: "Upper A", date: day(2), didWork: true),   // only this counts
         ]
         let a = AdherenceEngine.computeBlock(workouts: logs, blockNumber: 1, sessionsPerWeek: 4)
-        #expect(a.sessionsCompleted == 2)
-        #expect(a.trainingDays == 0)   // rest is not training
+        #expect(a.sessionsCompleted == 1)
+        #expect(a.trainingDays == 1)
     }
 
     @Test("Filters out workouts from other blocks")

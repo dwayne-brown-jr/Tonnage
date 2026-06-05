@@ -21,7 +21,9 @@ struct TrainView: View {
     // instead of snapping back to Week 1.
     @AppStorage("train.week") private var week = 1
     @AppStorage("train.sessionIndex") private var sessionIndex = 0
-    @AppStorage("train.dayType") private var dayType: DayType = .lift
+    // Day type is a transient mode, NOT persisted — it resets to Lift each launch so the
+    // screen never gets stuck showing a rest day.
+    @State private var dayType: DayType = .lift
     @State private var expandedID: PersistentIdentifier?
     @State private var sessionSaved = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
@@ -152,7 +154,7 @@ struct TrainView: View {
                     dayType: dayType,
                     isLogged: store.workout?.dayType == dayType,
                     onLog: {
-                        if let session { store.logRestDay(block: selectedBlock, week: week, session: session, dayType: dayType) }
+                        store.logRestDay(block: selectedBlock, week: week, dayType: dayType)
                     }
                 )
             }
@@ -171,7 +173,8 @@ struct TrainView: View {
                 blockMenu
             }
             WeekSelector(week: $week)
-            if !sessions.isEmpty {
+            // A rest day isn't a session, so hide the Upper/Lower picker in rest mode.
+            if !sessions.isEmpty && dayType == .lift {
                 SessionSelector(sessions: sessions, index: $sessionIndex)
             }
             DayTypeToggle(dayType: $dayType)
@@ -273,7 +276,7 @@ struct TrainView: View {
                     ?? workout.orderedExercises.first?.persistentModelID
             }
         case .activeRest, .fullRest:
-            store.loadRest(block: selectedBlock, week: week, session: session)
+            store.loadRest(block: selectedBlock, week: week)
         }
         refreshWidget()
     }
@@ -321,7 +324,7 @@ private struct RestDayView: View {
             }
 
             Button(action: onLog) {
-                Label(isLogged ? "Logged for This Week" : "Log This Day",
+                Label(isLogged ? "Rest Logged for Today" : "Log Rest for Today",
                       systemImage: isLogged ? "checkmark.circle.fill" : "square.and.pencil")
                     .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(isLogged ? Color.success : Color.onAccent)

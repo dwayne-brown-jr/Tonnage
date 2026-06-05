@@ -48,21 +48,26 @@ final class TrainStore {
         workout = w
     }
 
-    /// For active/full-rest days: surface an existing entry but never auto-create.
-    func loadRest(block: Int, week: Int, session: SessionTemplate) {
+    /// Sentinel session name for standalone rest-day logs — a rest day is a calendar day,
+    /// not one of the program's sessions.
+    static let restSlotName = "Rest Day"
+
+    /// For active/full-rest days: surface today's rest entry (if any). Never auto-creates.
+    func loadRest(block: Int, week: Int) {
         guard context != nil else { return }
         pruneIfEmpty(workout)
         guidance = [:]
-        workout = existingWorkout(block: block, week: week, sessionName: session.name)
+        workout = todaysRest(block: block, week: week)
     }
 
-    /// Explicitly persist a rest day (from the rest-day button).
-    func logRestDay(block: Int, week: Int, session: SessionTemplate, dayType: DayType) {
+    /// Persist a standalone rest day for today — decoupled from any session, so logging a
+    /// rest never touches your Upper/Lower workouts. One entry per calendar day.
+    func logRestDay(block: Int, week: Int, dayType: DayType) {
         guard let context else { return }
-        let w = existingWorkout(block: block, week: week, sessionName: session.name)
+        let w = todaysRest(block: block, week: week)
             ?? {
                 let new = LoggedWorkout(blockNumber: block, weekNumber: week, dayType: dayType,
-                                        sessionName: session.name, sessionTemplate: session)
+                                        sessionName: Self.restSlotName)
                 context.insert(new)
                 return new
             }()
@@ -70,6 +75,17 @@ final class TrainStore {
         try? context.save()
         workout = w
         Haptics.success()
+    }
+
+    /// Today's standalone rest entry for this block/week, if one exists.
+    private func todaysRest(block: Int, week: Int) -> LoggedWorkout? {
+        guard let context else { return nil }
+        let name = Self.restSlotName
+        let descriptor = FetchDescriptor<LoggedWorkout>(
+            predicate: #Predicate { $0.blockNumber == block && $0.weekNumber == week && $0.sessionName == name }
+        )
+        let cal = Calendar.current
+        return (try? context.fetch(descriptor))?.first { cal.isDateInToday($0.date) }
     }
 
     // MARK: Set editing

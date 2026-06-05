@@ -46,6 +46,17 @@ public enum TonnageStore {
                 seedIfNeeded(local.mainContext)
                 return local
             }
+            // Local store failed too — e.g. a schema change the lightweight migrator can't
+            // handle. Rather than crash on launch (which would silently take the watch app
+            // and its sync down), drop to a throwaway in-memory store so the app still runs.
+            // On the watch that's fine — the phone is the source of truth and re-pushes state.
+            if let memory = try? ModelContainer(
+                for: schema,
+                configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            ) {
+                seedIfNeeded(memory.mainContext)
+                return memory
+            }
             fatalError("Failed to create Tonnage ModelContainer: \(error)")
         }
     }

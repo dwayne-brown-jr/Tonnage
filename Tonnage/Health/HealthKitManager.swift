@@ -190,7 +190,7 @@ final class HealthKitManager {
         )
         guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else { return }
         let unit = HKUnit.count().unitDivided(by: .minute())
-        latestRestingHR = samples.first?.quantity.doubleValue(for: unit)
+        latestRestingHR = mostRecentDayAverage(samples, unit: unit)
         restingHRBaseline = baseline(of: samples, unit: unit)
     }
 
@@ -203,6 +203,19 @@ final class HealthKitManager {
         return pool.isEmpty ? nil : pool.reduce(0, +) / Double(pool.count)
     }
 
+    /// Average of the most-recent day's samples (samples are sorted newest-first). A single
+    /// transient reading — e.g. one low HRV measurement — shouldn't drive readiness, and
+    /// this keeps the "today" value consistent with the daily-average trend charts.
+    private func mostRecentDayAverage(_ samples: [HKQuantitySample], unit: HKUnit) -> Double? {
+        guard let newest = samples.first?.startDate else { return nil }
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: newest)
+        let values = samples
+            .filter { cal.startOfDay(for: $0.startDate) == day }
+            .map { $0.quantity.doubleValue(for: unit) }
+        return values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
+    }
+
     private func loadHRV() async {
         let start = Calendar.current.date(byAdding: .day, value: -14, to: .now)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
@@ -213,7 +226,7 @@ final class HealthKitManager {
         )
         guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else { return }
         let unit = HKUnit.secondUnit(with: .milli)
-        latestHRV = samples.first?.quantity.doubleValue(for: unit)
+        latestHRV = mostRecentDayAverage(samples, unit: unit)
         hrvBaseline = baseline(of: samples, unit: unit)
     }
 

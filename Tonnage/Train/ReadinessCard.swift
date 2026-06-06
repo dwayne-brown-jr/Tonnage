@@ -6,6 +6,9 @@ import TonnageCore
 /// chevron signals it drills in.
 struct ReadinessCard: View {
     let readiness: Readiness
+    /// Optional session-aware "Today" verdict — when set, it replaces the generic band note
+    /// so the card reads as an actionable daily plan (e.g. "Primed — go hard on Lower A").
+    var today: String? = nil
     /// Tapping the card body opens the Recovery screen (handled by the parent).
     var onOpen: () -> Void = {}
     @State private var showInfo = false
@@ -32,7 +35,7 @@ struct ReadinessCard: View {
                         .foregroundStyle(bandColor)
                     infoButton
                 }
-                Text(readiness.trainingNote)
+                Text(today ?? readiness.trainingNote)
                     .font(DSFont.callout)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

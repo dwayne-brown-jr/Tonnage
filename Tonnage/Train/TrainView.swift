@@ -140,7 +140,10 @@ struct TrainView: View {
         VStack(spacing: DS.Spacing.lg) {
             // Always shown — even with no data it reads as a "Connect Apple Health"
             // prompt and keeps the Recovery screen discoverable.
-            ReadinessCard(readiness: readiness) { showRecovery = true }
+            ReadinessCard(readiness: readiness,
+                          today: TodayPlan.verdict(band: readiness.band, focus: session?.name, dayType: dayType)) {
+                showRecovery = true
+            }
             switch dayType {
             case .lift:
                 SessionStatsBar(workout: store.workout)

@@ -62,6 +62,23 @@ public enum Analytics {
         workouts.filter { $0.dayType == .lift && $0.completedSetCount > 0 }.map(\.weekNumber).max()
     }
 
+    public struct WeekSummary: Sendable, Equatable {
+        public let week: Int
+        public let sessions: Int
+        public let sets: Int
+        public let volume: Double
+    }
+
+    /// Sessions / hard sets / tonnage for a single week (warm-ups + rest already excluded
+    /// by the underlying accessors). The caller passes the block-scoped workouts.
+    public static func weekSummary(_ workouts: [LoggedWorkout], week: Int) -> WeekSummary {
+        let wk = workouts.filter { $0.weekNumber == week }
+        return WeekSummary(week: week,
+                           sessions: sessionsLogged(wk),
+                           sets: totalSets(wk),
+                           volume: totalVolume(wk))
+    }
+
     /// Total tonnage per week across the block (0 for weeks with no logged volume).
     public static func weeklyVolume(_ workouts: [LoggedWorkout], weeks: Int = 5) -> [WeekVolume] {
         (1...weeks).map { week in

@@ -161,6 +161,70 @@ struct BlockShareCard: View {
     }
 }
 
+/// A week recap — "here's my week."
+struct WeekShareCard: View {
+    let block: Int
+    let summary: Analytics.WeekSummary
+    let prs: [PRMoment]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("TONNAGE")
+                    .font(.system(.caption, weight: .heavy).width(.condensed)).kerning(2)
+                    .foregroundStyle(Color.accent)
+                Spacer()
+                Text("WEEKLY RECAP")
+                    .font(.system(.caption2, weight: .bold)).kerning(1).foregroundStyle(Color.textTertiary)
+            }
+            .padding(.bottom, 16)
+
+            Text("WEEK \(String(format: "%02d", summary.week))")
+                .font(.system(size: 40, weight: .heavy).width(.condensed))
+                .foregroundStyle(Color.textPrimary)
+            Text("BLOCK \(String(format: "%02d", block))")
+                .font(.system(.caption, weight: .bold)).kerning(1)
+                .foregroundStyle(Color.textSecondary)
+                .padding(.bottom, 20)
+
+            HStack {
+                ShareStat(value: "\(summary.sessions)", label: "SESSIONS")
+                Spacer()
+                ShareStat(value: "\(summary.sets)", label: "HARD SETS")
+                Spacer()
+                ShareStat(value: Int(summary.volume).formatted(), label: "VOLUME · LB")
+            }
+            .padding(.bottom, prs.isEmpty ? 0 : 20)
+
+            if !prs.isEmpty {
+                Rectangle().fill(Color.hairline).frame(height: 1).padding(.bottom, 14)
+                Text("PRs THIS WEEK")
+                    .font(.system(.caption2, weight: .bold)).kerning(1).foregroundStyle(Color.textTertiary)
+                    .padding(.bottom, 8)
+                VStack(spacing: 9) {
+                    ForEach(Array(prs.prefix(3))) { pr in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(pr.exerciseName)
+                                .font(.system(.subheadline, weight: .semibold))
+                                .foregroundStyle(Color.textPrimary).lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text("e1RM \(CoachEngine.fmt(pr.estimatedOneRM.rounded()))")
+                                .font(.system(.subheadline, weight: .bold).monospacedDigit())
+                                .foregroundStyle(Color.accent)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(28)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .strokeBorder(Color.accent.opacity(0.3), lineWidth: 1))
+        .padding(16)
+        .background(Color.surface)
+    }
+}
+
 private struct ShareStat: View {
     let value: String
     let label: String

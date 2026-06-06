@@ -32,6 +32,11 @@ struct DataView: View {
     private var volume: [Analytics.WeekVolume] { Analytics.weeklyVolume(scoped) }
     private var hasData: Bool { Analytics.totalSets(scoped) > 0 }
     private var muscleWeek: Int? { Analytics.latestLoggedWeek(scoped) }
+    private var weekSummary: Analytics.WeekSummary? { muscleWeek.map { Analytics.weekSummary(scoped, week: $0) } }
+    private var weeklyPRs: [PRMoment] {
+        guard let wk = muscleWeek else { return [] }
+        return recentPRs.filter { $0.blockNumber == currentBlock && $0.weekNumber == wk }
+    }
     private var muscleVolume: [Analytics.MuscleVolume] {
         guard let wk = muscleWeek else { return [] }
         return Analytics.setsPerMuscle(scoped.filter { $0.weekNumber == wk })
@@ -53,6 +58,7 @@ struct DataView: View {
                     VStack(spacing: DS.Spacing.lg) {
                         if hasData {
                             summary
+                            weeklyCard
                             if sessionsPerWeek > 0 { adherenceCard }
                             if !recentPRs.isEmpty { prsCard }
                             muscleVolumeCard
@@ -97,6 +103,9 @@ struct DataView: View {
         Menu {
             if !shareableWorkouts.isEmpty {
                 Button { showWorkoutPicker = true } label: { Label("Share a Workout…", systemImage: "dumbbell.fill") }
+            }
+            if let s = weekSummary {
+                Button { shareWeekSummary(s) } label: { Label("Share This Week", systemImage: "calendar") }
             }
             if hasData {
                 Button { shareBlockSummary() } label: { Label("Share Block Check-In", systemImage: "chart.bar.fill") }
@@ -162,6 +171,47 @@ struct DataView: View {
     }
 
     private var divider: some View { Rectangle().fill(Color.hairline).frame(width: DS.Stroke.hairline, height: 32) }
+
+    // MARK: This week
+
+    @ViewBuilder private var weeklyCard: some View {
+        if let s = weekSummary {
+            VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("This Week").dsLabel()
+                    Spacer()
+                    Text("Week \(s.week)")
+                        .font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
+                }
+                HStack(spacing: DS.Spacing.sm) {
+                    stat(value: "\(s.sessions)", label: "Sessions", accent: false)
+                    divider
+                    stat(value: "\(s.sets)", label: "Sets", accent: false)
+                    divider
+                    stat(value: s.volume.formatted(.number.precision(.fractionLength(0))), label: "lb", accent: true)
+                }
+                Button { shareWeekSummary(s) } label: {
+                    Label("Share This Week", systemImage: "square.and.arrow.up")
+                        .font(.system(.subheadline, weight: .semibold)).foregroundStyle(Color.accent)
+                        .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
+                        .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(DS.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+        }
+    }
+
+    @MainActor private func shareWeekSummary(_ summary: Analytics.WeekSummary) {
+        let card = WeekShareCard(block: currentBlock, summary: summary, prs: weeklyPRs)
+        guard let img = ShareCardRenderer.image(card) else { return }
+        Haptics.impact(.light)
+        shareItem = ShareImageItem(image: img)
+    }
 
     // MARK: Adherence
 

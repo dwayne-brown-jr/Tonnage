@@ -55,6 +55,14 @@ struct AnalyticsTests {
         #expect(Analytics.totalVolume(w) == 3010)   // 1660 + 1350
     }
 
+    @Test("Week summary totals a single week")
+    func weekSummary() {
+        let s = Analytics.weekSummary(sampleWorkouts(), week: 1)
+        #expect(s.sessions == 1)
+        #expect(s.sets == 3)        // 2 bench + 1 curl
+        #expect(s.volume == 1660)
+    }
+
     // MARK: Sets per muscle
 
     /// Builds an exercise with `done` completed sets + `pending` incomplete sets.

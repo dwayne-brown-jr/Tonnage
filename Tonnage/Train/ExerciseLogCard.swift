@@ -128,9 +128,9 @@ struct ExerciseLogCard: View {
     }
 
     private var progressBadge: some View {
-        let done = exercise.completedSetCount
-        let total = (exercise.sets ?? []).count
-        let complete = exercise.isFullyLogged
+        let done = exercise.completedSetCount                                    // working, completed
+        let total = (exercise.sets ?? []).filter { !$0.isWarmup }.count          // working sets only
+        let complete = total > 0 && done >= total
         return Text("\(done)/\(total)")
             .font(DSFont.numberSm)
             .monospacedDigit()
@@ -173,9 +173,10 @@ struct ExerciseLogCard: View {
                         }
                         SetRow(
                             set: set,
-                            index: i + 1,
+                            label: setLabel(set, at: i),
                             metrics: metrics,
                             onToggleComplete: { toggleComplete(set) },
+                            onToggleWarmup: { toggleWarmup(set) },
                             onDelete: { store.deleteSet(set, from: exercise) }
                         )
                     }
@@ -200,13 +201,25 @@ struct ExerciseLogCard: View {
         withAnimation(DS.spring) { set.completed.toggle() }
         if set.completed {
             Haptics.success()
-            if !exercise.isCardio {
+            if !exercise.isCardio && !set.isWarmup {   // warm-ups don't trigger the rest timer
                 restTimer.startRest(forCompound: exercise.isCompound, label: exercise.name)
             }
         } else {
             Haptics.impact(.rigid)
         }
         store.save()
+    }
+
+    private func toggleWarmup(_ set: LoggedSet) {
+        withAnimation(DS.spring) { set.isWarmup.toggle() }
+        store.save()
+        Haptics.selection()
+    }
+
+    /// "W" for warm-ups; working sets number 1, 2, 3… ignoring any warm-ups before them.
+    private func setLabel(_ set: LoggedSet, at index: Int) -> String {
+        if set.isWarmup { return "W" }
+        return "\(exercise.orderedSets.prefix(index + 1).filter { !$0.isWarmup }.count)"
     }
 
     // MARK: Set-to-set cue
@@ -217,9 +230,9 @@ struct ExerciseLogCard: View {
     private func nextSetCue(forIndex i: Int) -> (cue: NextSetCue, weight: Double)? {
         guard !exercise.isCardio, i > 0 else { return nil }
         let sets = exercise.orderedSets
-        guard i < sets.count, !sets[i].completed else { return nil }
+        guard i < sets.count, !sets[i].completed, !sets[i].isWarmup else { return nil }
         let prev = sets[i - 1]
-        guard prev.completed, let rpe = prev.rpe else { return nil }
+        guard prev.completed, !prev.isWarmup, let rpe = prev.rpe else { return nil }
         let target = CoachEngine.targetRPE(forSetIndex: i - 1, in: exercise.rpeTarget)
         let cue = CoachEngine.nextSetCue(loggedRPE: rpe, targetRPE: target, isCompound: exercise.isCompound,
                                          holdProgression: store.readinessHoldsProgression)

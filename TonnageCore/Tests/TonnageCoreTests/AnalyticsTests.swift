@@ -84,6 +84,25 @@ struct AnalyticsTests {
         #expect(!result.contains { $0.label == "Cardio" })
     }
 
+    @Test("Warm-up sets are excluded from volume, hard-set counts, top set, and per-muscle")
+    func warmupsExcluded() {
+        let ex = LoggedExercise(name: "Barbell Bench Press", isCompound: true, sortOrder: 0)
+        ex.sets = [
+            LoggedSet(weight: 95, reps: 5, completed: true, isWarmup: true, sortOrder: 0),    // warm-up (heaviest by weight? no)
+            LoggedSet(weight: 225, reps: 5, completed: true, isWarmup: true, sortOrder: 1),   // heavy warm-up — must NOT be top set
+            LoggedSet(weight: 185, reps: 5, completed: true, sortOrder: 2),                    // working
+            LoggedSet(weight: 185, reps: 5, completed: true, sortOrder: 3)                     // working
+        ]
+        let w = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "Upper")
+        w.exercises = [ex]
+
+        #expect(ex.completedSetCount == 2)                                   // only working sets
+        #expect(ex.topSet?.weight == 185)                                    // not the 225 warm-up
+        #expect(w.totalVolume == 185 * 5 * 2)                                // warm-ups contribute 0
+        #expect(Analytics.setsPerMuscle([w]).first?.sets == 2)               // chest = 2 hard sets
+        #expect(PersonalRecords.recentPRs(in: [w]).isEmpty)                  // warm-ups don't establish/beat PRs
+    }
+
     @Test("Latest logged week ignores empty + rest workouts")
     func latestLoggedWeek() {
         let w1 = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "A")

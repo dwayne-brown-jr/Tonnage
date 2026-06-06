@@ -7,16 +7,18 @@ import TonnageCore
 /// Ends with the signature completion toggle (spring + accent fill + haptic).
 struct SetRow: View {
     @Bindable var set: LoggedSet
-    let index: Int
+    /// Display label for the set number — "1", "2"… for working sets, "W" for warm-ups.
+    let label: String
     let metrics: [SetMetric]
     let onToggleComplete: () -> Void
+    let onToggleWarmup: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: DS.Spacing.sm) {
-            Text("\(index)")
+            Text(label)
                 .font(DSFont.numberSm)
-                .foregroundStyle(set.completed ? Color.accent : Color.textTertiary)
+                .foregroundStyle(set.isWarmup ? Color.textTertiary : (set.completed ? Color.accent : Color.textTertiary))
                 .frame(width: 16)
 
             ForEach(metrics) { metric in
@@ -28,8 +30,12 @@ struct SetRow: View {
             CompleteButton(completed: set.completed, action: onToggleComplete)
         }
         .padding(.vertical, DS.Spacing.xs)
-        .opacity(set.completed ? 1 : 0.92)
+        .opacity(set.isWarmup ? 0.8 : (set.completed ? 1 : 0.92))
         .contextMenu {
+            Button(action: onToggleWarmup) {
+                Label(set.isWarmup ? "Mark as Working Set" : "Mark as Warm-up",
+                      systemImage: set.isWarmup ? "dumbbell" : "flame")
+            }
             Button(role: .destructive, action: onDelete) {
                 Label("Delete Set", systemImage: "trash")
             }

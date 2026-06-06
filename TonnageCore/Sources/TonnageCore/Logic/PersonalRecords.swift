@@ -47,7 +47,7 @@ public enum PersonalRecords {
 
         for w in chronological {
             for ex in w.orderedExercises where !ex.isCardio {
-                for set in ex.orderedSets where set.completed {
+                for set in ex.orderedSets where set.completed && !set.isWarmup {
                     // Skip high-rep sets — Epley over-estimates there and would mint fake PRs.
                     guard set.weight > 0, set.reps > 0, set.reps <= maxRepsForReliableE1RM else { continue }
                     let e = epley(weight: set.weight, reps: set.reps)

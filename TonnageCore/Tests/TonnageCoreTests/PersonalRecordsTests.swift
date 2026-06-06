@@ -58,6 +58,21 @@ struct PersonalRecordsTests {
         #expect(prs.contains(where: { $0.exerciseName == "Squat" }))
     }
 
+    @Test("High-rep pump sets don't fire false PRs (Epley is unreliable past ~12 reps)")
+    func highRepNoFalsePR() {
+        // Heavy low-rep baseline, then a light high-rep set whose inflated Epley e1RM
+        // would beat it — must NOT count as a PR.
+        let baseline = workout(name: "Bench", date: day(0), sets: [(185, 3)])   // e1RM ~203
+        let pump     = workout(name: "Bench", date: day(1), sets: [(135, 20)])  // Epley ~225, but bogus
+        #expect(PersonalRecords.recentPRs(in: [baseline, pump]).isEmpty)
+
+        // A legit low-rep PR still fires.
+        let realPR = workout(name: "Bench", date: day(2), sets: [(195, 3)])
+        let prs = PersonalRecords.recentPRs(in: [baseline, pump, realPR])
+        #expect(prs.count == 1)
+        #expect(prs[0].weight == 195)
+    }
+
     // MARK: helpers
 
     private func day(_ offset: Int) -> Date {

@@ -4,6 +4,13 @@ import Charts
 import UIKit
 import TonnageCore
 
+/// Which curve the progression chart plots: the raw heaviest set, or its estimated 1RM
+/// (which normalizes across rep ranges, so it's the truer strength trend).
+private enum ProgressionMetric: String, CaseIterable {
+    case topSet = "Top Set"
+    case e1RM = "e1RM"
+}
+
 /// DATA: block summary, adherence + PR feed, weekly volume, and per-exercise top-set
 /// progression. PRs span all blocks (lifetime); everything else is block-scoped.
 struct DataView: View {
@@ -17,6 +24,7 @@ struct DataView: View {
     @State private var showWeightEntry = false
     @State private var shareItem: ShareImageItem?
     @State private var showWorkoutPicker = false
+    @State private var progressionMetric: ProgressionMetric = .topSet
 
     /// DATA is scoped to the active block so volume/progression don't mix mesocycles.
     private var scoped: [LoggedWorkout] { workouts.filter { $0.blockNumber == currentBlock } }
@@ -350,28 +358,39 @@ struct DataView: View {
         let series = selectedExercise.map { Analytics.topSetSeries(for: $0, in: scoped) } ?? []
         let highlight = series.first { $0.week == scrubWeek } ?? series.last
 
-        return chartCard(title: "Top-Set Progression", subtitle: nil) {
+        return chartCard(title: "Progression",
+                         subtitle: progressionMetric == .e1RM ? "Estimated 1RM — normalizes across rep ranges"
+                                                              : "Heaviest set per week") {
             VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                exercisePicker
+                HStack {
+                    exercisePicker
+                    Spacer(minLength: DS.Spacing.sm)
+                    Picker("", selection: $progressionMetric) {
+                        ForEach(ProgressionMetric.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 148)
+                }
                 if let highlight {
                     HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.sm) {
                         Text("W\(highlight.week)").font(DSFont.numberSm).foregroundStyle(Color.textTertiary)
                         Text("\(CoachEngine.fmt(highlight.weight)) × \(highlight.reps)")
                             .font(DSFont.number).foregroundStyle(Color.textPrimary)
                         Text("e1RM \(CoachEngine.fmt(highlight.estimatedOneRepMax.rounded()))")
-                            .font(DSFont.numberSm).foregroundStyle(Color.accent)
+                            .font(DSFont.numberSm)
+                            .foregroundStyle(progressionMetric == .e1RM ? Color.accent : Color.textTertiary)
                     }
                 }
                 Chart(series) { point in
-                    AreaMark(x: .value("Week", point.week), y: .value("Top set", point.weight))
+                    AreaMark(x: .value("Week", point.week), y: .value(progressionMetric.rawValue, metricValue(point)))
                         .foregroundStyle(.linearGradient(colors: [Color.accent.opacity(0.35), Color.accent.opacity(0.02)],
                                                           startPoint: .top, endPoint: .bottom))
                         .interpolationMethod(.monotone)
-                    LineMark(x: .value("Week", point.week), y: .value("Top set", point.weight))
+                    LineMark(x: .value("Week", point.week), y: .value(progressionMetric.rawValue, metricValue(point)))
                         .foregroundStyle(Color.accent)
                         .lineStyle(StrokeStyle(lineWidth: 2.5))
                         .interpolationMethod(.monotone)
-                    PointMark(x: .value("Week", point.week), y: .value("Top set", point.weight))
+                    PointMark(x: .value("Week", point.week), y: .value(progressionMetric.rawValue, metricValue(point)))
                         .foregroundStyle(Color.accent)
                         .symbolSize(scrubWeek == point.week ? 160 : 70)
                     if let highlight, scrubWeek == highlight.week {
@@ -387,6 +406,10 @@ struct DataView: View {
                 .frame(height: 180)
             }
         }
+    }
+
+    private func metricValue(_ p: Analytics.TopSetPoint) -> Double {
+        progressionMetric == .e1RM ? p.estimatedOneRepMax.rounded() : p.weight
     }
 
     private var exercisePicker: some View {

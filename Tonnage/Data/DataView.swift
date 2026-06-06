@@ -179,6 +179,8 @@ struct DataView: View {
             VStack(alignment: .leading, spacing: DS.Spacing.md) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("This Week").dsLabel()
+                    InfoPopoverButton(title: "This Week",
+                        message: "This week's training — sessions done, hard working sets, and total tonnage. Aim to complete your planned sessions and keep volume steady or climbing.")
                     Spacer()
                     Text("Week \(s.week)")
                         .font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
@@ -219,6 +221,8 @@ struct DataView: View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Adherence").dsLabel()
+                InfoPopoverButton(title: "Adherence",
+                    message: "How much of the block you've completed — logged sessions vs the plan (sessions/week × weeks). Consistency drives results; aim for 80%+.")
                 Spacer()
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(adherence.sessionsCompleted)")
@@ -262,6 +266,8 @@ struct DataView: View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             HStack(alignment: .firstTextBaseline) {
                 Text("PR Moments").dsLabel()
+                InfoPopoverButton(title: "PR Moments",
+                    message: "Personal records — when a lift's estimated 1RM beats all your prior sets. Proof the work is paying off. High-rep pump sets are excluded.")
                 Spacer()
                 Text("lifetime").font(.system(.caption2)).foregroundStyle(Color.textTertiary)
             }
@@ -320,6 +326,8 @@ struct DataView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Sets per Muscle").dsLabel()
+                        InfoPopoverButton(title: "Sets per Muscle",
+                            message: "Hard working sets per muscle this week. For growth, target ~10–20 per muscle weekly — the shaded green zone. Gray = under, orange = over.")
                         Spacer()
                         Text("Week \(wk)")
                             .font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
@@ -379,7 +387,8 @@ struct DataView: View {
     // MARK: Weekly volume
 
     private var volumeCard: some View {
-        chartCard(title: "Weekly Volume", subtitle: "Total tonnage per week") {
+        chartCard(title: "Weekly Volume", subtitle: "Total tonnage per week",
+                  info: "Total tonnage (weight × reps of every working set) per week. A workload gauge — gradually trending up across a block is a good sign.") {
             Chart(volume) { item in
                 // Categorical x ("W1"…"W5") gives BarMark a band to size against.
                 BarMark(
@@ -410,7 +419,8 @@ struct DataView: View {
 
         return chartCard(title: "Progression",
                          subtitle: progressionMetric == .e1RM ? "Estimated 1RM — normalizes across rep ranges"
-                                                              : "Heaviest set per week") {
+                                                              : "Heaviest set per week",
+                         info: "Your top set — or its estimated 1RM — per week for one lift. e1RM normalizes rep ranges, so it's the truer strength trend. You want this climbing over the block.") {
             VStack(alignment: .leading, spacing: DS.Spacing.md) {
                 HStack {
                     exercisePicker
@@ -486,7 +496,8 @@ struct DataView: View {
     // MARK: Bodyweight (HealthKit lands in M5)
 
     @ViewBuilder private var bodyweightCard: some View {
-        chartCard(title: "Bodyweight", subtitle: "Recomp trend") {
+        chartCard(title: "Bodyweight", subtitle: "Recomp trend",
+                  info: "Your bodyweight trend from Apple Health. Read it against your goal: recomp = steady weight while strength climbs; bulk = slow gain; cut = slow loss.") {
             if !health.isAvailable {
                 placeholder(icon: "heart.slash", text: "Apple Health isn't available on this device.")
             } else if !health.bodyweight.isEmpty {
@@ -593,10 +604,14 @@ struct DataView: View {
 
     // MARK: Chart chrome
 
-    private func chartCard<Content: View>(title: String, subtitle: String?, @ViewBuilder content: () -> Content) -> some View {
+    private func chartCard<Content: View>(title: String, subtitle: String?, info: String? = nil,
+                                          @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).dsLabel()
+                HStack(spacing: 0) {
+                    Text(title).dsLabel()
+                    if let info { InfoPopoverButton(title: title, message: info) }
+                }
                 if let subtitle {
                     Text(subtitle).font(.system(.caption2)).foregroundStyle(Color.textTertiary)
                 }

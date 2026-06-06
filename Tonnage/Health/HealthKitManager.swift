@@ -319,7 +319,15 @@ final class HealthKitManager {
         let start = cal.date(byAdding: .hour, value: -36, to: .now)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
         let byDay = await dailySleepHours(predicate: predicate, cal: cal)
-        lastNightSleepHours = byDay.last?.value
+        // Only trust the most-recent bucket if it plausibly IS last night: anchored to
+        // today/yesterday and a real sleep, not a short afternoon nap or a stale partial.
+        // Otherwise drop sleep from readiness rather than feeding it a wrong number.
+        guard let latest = byDay.last, latest.value >= 3,
+              cal.isDateInToday(latest.date) || cal.isDateInYesterday(latest.date) else {
+            lastNightSleepHours = nil
+            return
+        }
+        lastNightSleepHours = latest.value
     }
 
     // MARK: Writes
@@ -370,41 +378,77 @@ final class HealthKitManager {
     // MARK: Import external workouts
 
     /// Pulls workouts logged by OTHER apps (Apple Workout app, etc.) from Health and
-    /// records them as MOVE activities. Skips Tonnage's own workouts and de-dupes by UUID.
-    func importExternalWorkouts(into context: ModelContext) async {
-        guard isAvailable, hasRequested else { return }
-        let start = Calendar.current.date(byAdding: .day, value: -30, to: .now)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
+    /// records them as MOVE activities. Skips Tonnage's own workouts, strength work
+    /// (that lives in TRAIN), anything already imported (by HK UUID), and anything that
+    /// looks like a session the user already logged by hand (same kind, near the same
+    /// time). Returns the number newly imported so callers can give feedback.
+    @discardableResult
+    func importExternalWorkouts(into context: ModelContext) async -> Int {
+        guard isAvailable, hasRequested else { return 0 }
+        // 90-day window (vs 30) so a fresh install backfills recent history, with a higher
+        // cap for heavy users — paired with the save-gated "seen" set below so nothing is
+        // silently dropped and never retried.
+        let lookback = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .now
+        let predicate = HKQuery.predicateForSamples(withStart: lookback, end: nil)
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.workout(predicate)],
             sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)],
-            limit: 50
+            limit: 200
         )
-        guard let workouts = try? await descriptor.result(for: store) else { return }
+        guard let workouts = try? await descriptor.result(for: store) else { return 0 }
 
         let key = "hk.importedWorkouts"
-        var imported = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
-        var didInsert = false
+        let alreadySeen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+
+        // Existing MOVE activities in range — used to skip a workout the user already
+        // logged manually (the manual entry mirrors to Health under our own bundle ID and
+        // is skipped, but the ORIGINAL third-party workout would otherwise re-add it).
+        let existing = (try? context.fetch(
+            FetchDescriptor<Activity>(predicate: #Predicate { $0.date >= lookback })
+        )) ?? []
+        let tolerance: TimeInterval = 30 * 60
+
+        var newlySeen = Set<String>()          // only UUIDs we successfully resolve this run
+        var inserted: [Activity] = []
 
         for workout in workouts {
             let id = workout.uuid.uuidString
-            guard !imported.contains(id) else { continue }
-            imported.insert(id)
-            // Skip our own (already logged as sessions/activities).
-            if workout.sourceRevision.source.bundleIdentifier.hasPrefix("com.dwayne.tonnage") { continue }
-            // Skip strength workouts (e.g. a lift tracked in Apple's Workout app) — those
-            // are logged set-by-set in TRAIN, not conditioning entries in MOVE.
-            if Self.isStrengthWorkout(workout.workoutActivityType) { continue }
-
+            guard !alreadySeen.contains(id), !newlySeen.contains(id) else { continue }
+            // Our own workouts + strength work are deterministic skips — safe to remember.
+            if workout.sourceRevision.source.bundleIdentifier.hasPrefix("com.dwayne.tonnage") {
+                newlySeen.insert(id); continue
+            }
+            if Self.isStrengthWorkout(workout.workoutActivityType) {
+                newlySeen.insert(id); continue
+            }
             let (name, kind) = Self.mapped(workout.workoutActivityType)
+            // Fuzzy de-dupe against manually-logged + already-inserted activities.
+            let isDuplicate = (existing + inserted).contains { a in
+                a.kind == kind && abs(a.date.timeIntervalSince(workout.startDate)) < tolerance
+            }
+            if isDuplicate { newlySeen.insert(id); continue }
+
             let minutes = max(1, Int((workout.duration / 60).rounded()))
             let activity = Activity(name: name, kind: kind, durationMinutes: minutes,
                                     detail: "Imported from Apple Health", date: workout.startDate)
             context.insert(activity)
-            didInsert = true
+            inserted.append(activity)
+            newlySeen.insert(id)
         }
-        if didInsert { try? context.save() }
-        UserDefaults.standard.set(Array(imported), forKey: key)
+
+        // Only remember this batch once the save actually succeeds. A swallowed failure
+        // used to mark workouts "seen" anyway, permanently suppressing them — instead we
+        // roll back and persist nothing, so the next run retries cleanly.
+        if !inserted.isEmpty {
+            do {
+                try context.save()
+            } catch {
+                context.rollback()
+                return 0
+            }
+        }
+        UserDefaults.standard.set(Array(alreadySeen.union(newlySeen)), forKey: key)
+        return inserted.count
     }
 
     /// Lifting workouts belong in TRAIN (logged with sets), never imported into MOVE.

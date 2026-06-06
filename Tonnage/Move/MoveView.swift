@@ -5,9 +5,12 @@ import TonnageCore
 /// MOVE: quick-add active-rest / cardio logging + recent history.
 struct MoveView: View {
     @Environment(\.modelContext) private var context
+    @Environment(HealthKitManager.self) private var health
     @Query(sort: \Activity.date, order: .reverse) private var activities: [Activity]
 
     @State private var entryKind: ActivityKind?
+    @State private var importing = false
+    @State private var importMessage: String?
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     private let quickKinds: [ActivityKind] = [
@@ -21,6 +24,7 @@ struct MoveView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.xl) {
                         quickAdd
+                        if health.hasRequested { healthImport }
                         recent
                     }
                     .padding(DS.Spacing.lg)
@@ -71,6 +75,50 @@ struct MoveView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private var healthImport: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Button {
+                guard !importing else { return }
+                importing = true
+                importMessage = nil
+                Task {
+                    let n = await health.importExternalWorkouts(into: context)
+                    importMessage = n > 0
+                        ? "Imported \(n) workout\(n == 1 ? "" : "s") from Apple Health."
+                        : "No new workouts to import."
+                    importing = false
+                    Haptics.success()
+                }
+            } label: {
+                HStack(spacing: DS.Spacing.sm) {
+                    if importing {
+                        ProgressView().controlSize(.small).tint(Color.textSecondary)
+                    } else {
+                        Image(systemName: "arrow.down.heart")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.accent)
+                    }
+                    Text("Import from Apple Health")
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, DS.Spacing.md)
+                .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                        .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(importing)
+
+            Text(importMessage ?? "Pulls cardio (walks, runs, rides, stairs) from Apple Fitness and other apps. Strength workouts stay in TRAIN.")
+                .font(.system(.caption2))
+                .foregroundStyle(Color.textTertiary)
         }
     }
 
@@ -137,5 +185,6 @@ private struct ActivityRow: View {
 #Preview("Move") {
     MoveView()
         .modelContainer(TonnageStore.makeContainer(inMemory: true))
+        .environment(HealthKitManager())
         .preferredColorScheme(.dark)
 }

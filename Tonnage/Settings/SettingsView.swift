@@ -499,6 +499,25 @@ struct SettingsView: View {
 
             Text("Simulator-only: serves sample HRV / resting HR / sleep so the Readiness card and Recovery charts populate. Compiled out of release builds.")
                 .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+
+            Divider().overlay(Color.hairline)
+
+            Button {
+                UserDefaults.standard.set(1, forKey: "currentBlock")
+                UserDefaults.standard.set(3, forKey: "train.week")     // jump to the most recent week
+                DemoData.seedTrainingData(in: modelContext)
+                Task { await health.setDemoRecovery(true) }
+                Haptics.success()
+            } label: {
+                Text("Load 3 Weeks of Demo Data")
+                    .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                    .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            Text("Wipes logged data, then seeds 3 weeks of workouts (with warm-ups + progression) and a few cardio sessions into Block 01, and turns on demo recovery — so DATA, the Today card, per-muscle volume, PRs, progression, insights, and the share cards all populate.")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
         }
     }
 #endif

@@ -17,6 +17,15 @@ struct RecoverySeries: Sendable {
     var sleepHours: [DatedValue] = []
 }
 
+/// Last night's sleep broken into stages (hours). Deep drives physical recovery, REM
+/// supports learning/mood, core (light) is the bulk of the night.
+struct SleepStages: Sendable, Equatable {
+    var deep: Double = 0
+    var rem: Double = 0
+    var core: Double = 0
+    var total: Double { deep + rem + core }
+}
+
 /// Central HealthKit gateway: authorization, reads (bodyweight / resting HR / sleep),
 /// and writes (workouts + bodyweight). The app works fully with Health off — every
 /// path guards `isAvailable` and tolerates denied access by simply showing no data.
@@ -281,6 +290,42 @@ final class HealthKitManager {
             sums[day] = (cur.total + v, cur.count + 1)
         }
         return sums.keys.sorted().map { DatedValue(date: $0, value: sums[$0]!.total / Double(sums[$0]!.count)) }
+    }
+
+    /// Last night's sleep split into deep / REM / core, using the same +6h wake-day anchor
+    /// and recency/min-duration guard as the readiness sleep input (so a nap or stale night
+    /// doesn't masquerade as last night). Returns nil if there's no plausible recent night.
+    func lastNightSleepStages() async -> SleepStages? {
+#if DEBUG
+        if isDemoRecovery { return SleepStages(deep: 1.4, rem: 1.8, core: 4.6) }   // ~7.8h, matches demo
+#endif
+        guard isAvailable, hasRequested else { return nil }
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .hour, value: -36, to: .now)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.categorySample(type: sleep, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .forward)],
+            limit: HKObjectQueryNoLimit
+        )
+        guard let samples = try? await descriptor.result(for: store) else { return nil }
+        var byDay: [Date: SleepStages] = [:]
+        for s in samples {
+            let day = cal.startOfDay(for: s.endDate.addingTimeInterval(6 * 3600))
+            let hours = s.endDate.timeIntervalSince(s.startDate) / 3600
+            var stages = byDay[day] ?? SleepStages()
+            switch s.value {
+            case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: stages.deep += hours
+            case HKCategoryValueSleepAnalysis.asleepREM.rawValue:  stages.rem += hours
+            case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                 HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: stages.core += hours
+            default: break
+            }
+            byDay[day] = stages
+        }
+        guard let day = byDay.keys.max(), let stages = byDay[day], stages.total >= 3,
+              cal.isDateInToday(day) || cal.isDateInYesterday(day) else { return nil }
+        return stages
     }
 
     private func dailySleepHours(predicate: NSPredicate, cal: Calendar) async -> [DatedValue] {

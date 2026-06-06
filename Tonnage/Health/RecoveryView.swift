@@ -13,6 +13,7 @@ struct RecoveryView: View {
     @AppStorage("currentBlock") private var currentBlock = 1
     @AppStorage("train.week") private var trainWeek = 1
     @State private var series = RecoverySeries()
+    @State private var sleepStages: SleepStages?
     @State private var loaded = false
     @State private var connecting = false
 
@@ -48,10 +49,15 @@ struct RecoveryView: View {
                         if !readiness.drivers.isEmpty { driversCard }
                         if loaded && !insights.isEmpty { insightsCard }
                         if loaded {
-                            trendCard("Readiness", series: readinessTrend, unit: "", fixedDomain: 0...100)
-                            trendCard("HRV", series: series.hrv, unit: "ms")
-                            trendCard("Resting HR", series: series.restingHR, unit: "bpm")
-                            trendCard("Sleep", series: series.sleepHours, unit: "h", decimals: 1)
+                            trendCard("Readiness", series: readinessTrend, unit: "", fixedDomain: 0...100,
+                                      info: "Your daily recovery read — HRV, resting heart rate, and sleep scored 0–100 against your own baselines. The trend is plotted against your current baseline.")
+                            trendCard("HRV", series: series.hrv, unit: "ms",
+                                      info: "Heart-rate variability — the beat-to-beat variation in your pulse. Higher vs your baseline usually means better recovery; a steady drift down can flag accumulating fatigue, illness, or stress.")
+                            trendCard("Resting HR", series: series.restingHR, unit: "bpm",
+                                      info: "Your heart rate at rest. Lower vs your baseline generally means better-recovered; an elevated resting HR often shows up a day or two before you feel run-down.")
+                            trendCard("Sleep", series: series.sleepHours, unit: "h", decimals: 1,
+                                      info: "Total time asleep, anchored to each wake-up day. Sleep is when you adapt to training — a consistent 7–9 hours supports recovery and performance.")
+                            sleepStagesCard
                         } else {
                             ProgressView().tint(.accent).frame(maxWidth: .infinity, minHeight: 200)
                         }
@@ -71,6 +77,7 @@ struct RecoveryView: View {
         .tint(.accent)
         .task {
             series = await health.recoverySeries()
+            sleepStages = await health.lastNightSleepStages()
             loaded = true
         }
     }
@@ -108,7 +115,7 @@ struct RecoveryView: View {
     }
 
     private var driversCard: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
             Text("What's driving it").dsLabel()
             ForEach(readiness.drivers) { driver in
                 HStack(spacing: DS.Spacing.sm) {
@@ -116,14 +123,36 @@ struct RecoveryView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(driverColor(driver.sign))
                         .frame(width: 16)
-                    Text(driver.label).font(DSFont.numberSm).foregroundStyle(Color.textSecondary)
-                    Spacer(minLength: 0)
+                    Text(driver.label)
+                        .font(DSFont.numberSm).foregroundStyle(Color.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    Spacer(minLength: DS.Spacing.sm)
+                    contributionBar(driver).frame(width: 84, height: 8)
                 }
             }
         }
         .padding(DS.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
+
+    /// A diverging bar centered on baseline: grows right (green) for a positive
+    /// contribution, left (orange) for a negative one — Oura-style "how much it helped/hurt."
+    private func contributionBar(_ d: Readiness.Driver) -> some View {
+        GeometryReader { geo in
+            let half = geo.size.width / 2
+            let frac = CGFloat(d.fraction)
+            let barW = max(d.points == 0 ? 0 : 3, half * abs(frac))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.surfaceElevated2)
+                Rectangle().fill(Color.textTertiary.opacity(0.6))
+                    .frame(width: 1).frame(maxHeight: .infinity)
+                    .offset(x: half - 0.5)
+                Capsule().fill(driverColor(d.sign))
+                    .frame(width: barW)
+                    .offset(x: frac >= 0 ? half : half - barW)
+            }
+        }
     }
 
     private var insightsCard: some View {
@@ -175,6 +204,7 @@ struct RecoveryView: View {
                 Task {
                     await health.requestAuthorization()
                     series = await health.recoverySeries()
+                    sleepStages = await health.lastNightSleepStages()
                     loaded = true
                     connecting = false
                 }
@@ -195,14 +225,61 @@ struct RecoveryView: View {
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
     }
 
+    // MARK: Sleep stages
+
+    @ViewBuilder private var sleepStagesCard: some View {
+        if let s = sleepStages, s.total > 0 {
+            VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Sleep Stages").dsLabel()
+                    InfoPopoverButton(title: "Sleep Stages",
+                        message: "Deep sleep drives physical recovery and muscle repair; REM supports memory and mood; core (light) sleep makes up most of the night. More deep + REM generally means a more restorative night.")
+                    Spacer()
+                    Text(String(format: "%.1f h", s.total))
+                        .font(DSFont.numberSm).foregroundStyle(Color.textPrimary)
+                }
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    let total = max(s.total, 0.0001)
+                    HStack(spacing: 0) {
+                        Rectangle().fill(Color.accent).frame(width: w * CGFloat(s.deep / total))
+                        Rectangle().fill(Color.success).frame(width: w * CGFloat(s.rem / total))
+                        Rectangle().fill(Color.textSecondary).frame(width: w * CGFloat(s.core / total))
+                    }
+                }
+                .frame(height: 10)
+                .clipShape(Capsule())
+                HStack(spacing: DS.Spacing.lg) {
+                    stageLegend("Deep", s.deep, Color.accent)
+                    stageLegend("REM", s.rem, Color.success)
+                    stageLegend("Core", s.core, Color.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(DS.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        }
+    }
+
+    private func stageLegend(_ name: String, _ hours: Double, _ color: Color) -> some View {
+        HStack(spacing: DS.Spacing.xs) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(name).font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
+            Text(String(format: "%.1fh", hours)).font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textSecondary)
+        }
+    }
+
     // MARK: Trend cards
 
     @ViewBuilder
     private func trendCard(_ title: String, series data: [DatedValue], unit: String,
-                           decimals: Int = 0, fixedDomain: ClosedRange<Double>? = nil) -> some View {
+                           decimals: Int = 0, fixedDomain: ClosedRange<Double>? = nil,
+                           info: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.sm) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title).dsLabel()
+                if let info { InfoPopoverButton(title: title, message: info) }
                 Spacer()
                 if let latest = data.last {
                     Text(format(latest.value, decimals: decimals) + (unit.isEmpty ? "" : " \(unit)"))

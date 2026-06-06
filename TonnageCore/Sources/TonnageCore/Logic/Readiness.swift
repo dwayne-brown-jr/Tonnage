@@ -32,8 +32,20 @@ public struct Readiness: Sendable, Equatable {
         public enum Sign: Sendable { case positive, negative, neutral }
         public let label: String
         public let sign: Sign
+        /// Signed points this signal added to (or subtracted from) the score.
+        public let points: Double
+        /// Max |points| this signal can contribute — for scaling a contribution bar.
+        public let magnitude: Double
         public var id: String { label }
-        public init(_ label: String, _ sign: Sign) { self.label = label; self.sign = sign }
+        /// Contribution as a fraction of this signal's max, clamped to [-1, 1].
+        public var fraction: Double { magnitude > 0 ? max(-1, min(1, points / magnitude)) : 0 }
+
+        public init(_ label: String, _ sign: Sign, points: Double = 0, magnitude: Double = 1) {
+            self.label = label
+            self.sign = sign
+            self.points = points
+            self.magnitude = magnitude
+        }
     }
 
     public let score: Int?          // 0–100; nil when there isn't enough data
@@ -61,31 +73,34 @@ public enum ReadinessEngine {
         if let hrv = i.hrvMs, let base = i.hrvBaselineMs, base > 0 {
             signals += 1
             let dev = (hrv - base) / base
-            score += clamp(dev * 80, -22, 22)
+            let pts = clamp(dev * 80, -22, 22)
+            score += pts
             let sign: Readiness.Driver.Sign = dev > 0.04 ? .positive : (dev < -0.04 ? .negative : .neutral)
-            drivers.append(.init("HRV \(Int(hrv.rounded())) ms (\(pct(dev)) vs baseline)", sign))
+            drivers.append(.init("HRV \(Int(hrv.rounded())) ms (\(pct(dev)) vs baseline)", sign, points: pts, magnitude: 22))
         }
 
         // Resting HR vs baseline — lower is better.
         if let rhr = i.restingHR, let base = i.restingHRBaseline, base > 0 {
             signals += 1
             let dev = (base - rhr) / base
-            score += clamp(dev * 120, -16, 12)
+            let pts = clamp(dev * 120, -16, 12)
+            score += pts
             let sign: Readiness.Driver.Sign = dev > 0.02 ? .positive : (dev < -0.02 ? .negative : .neutral)
-            drivers.append(.init("Resting HR \(Int(rhr.rounded())) bpm", sign))
+            drivers.append(.init("Resting HR \(Int(rhr.rounded())) bpm", sign, points: pts, magnitude: 16))
         }
 
         // Sleep vs a 7.5h target.
         if let sleep = i.sleepHours {
             signals += 1
-            score += clamp((sleep - 7.5) * 6, -18, 10)
+            let pts = clamp((sleep - 7.5) * 6, -18, 10)
+            score += pts
             let sign: Readiness.Driver.Sign = sleep >= 7.25 ? .positive : (sleep < 6.5 ? .negative : .neutral)
-            drivers.append(.init(String(format: "Slept %.1fh", sleep), sign))
+            drivers.append(.init(String(format: "Slept %.1fh", sleep), sign, points: pts, magnitude: 18))
         }
 
         if i.trainedYesterday {
             score -= 7
-            drivers.append(.init("Trained yesterday", .negative))
+            drivers.append(.init("Trained yesterday", .negative, points: -7, magnitude: 7))
         }
 
         guard signals > 0 else {

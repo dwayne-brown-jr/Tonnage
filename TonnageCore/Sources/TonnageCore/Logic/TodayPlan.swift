@@ -4,11 +4,16 @@ import Foundation
 /// today's planned focus so the readiness card reads as an actionable plan, not just a score.
 public enum TodayPlan {
 
-    public static func verdict(band: Readiness.Band, focus: String?, dayType: DayType) -> String {
+    public static func verdict(band: Readiness.Band, focus: String?, dayType: DayType,
+                               trainingStreak: Int = 0) -> String {
         if dayType != .lift {
             return dayType == .activeRest
                 ? "Active recovery — easy conditioning, keep it light."
                 : "Full rest — eat, sleep, let the work catch up."
+        }
+        // Accumulated fatigue trumps a single good day: a long unbroken run warrants rest.
+        if FatigueEngine.recommendsRest(trainingStreak) {
+            return "\(trainingStreak) days straight — a full rest day would help you recover."
         }
         let f = (focus?.isEmpty == false) ? focus! : "today's session"
         switch band {

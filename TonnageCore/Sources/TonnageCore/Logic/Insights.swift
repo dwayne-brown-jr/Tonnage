@@ -69,14 +69,16 @@ public enum InsightEngine {
         public var lifts: [Lift]                          // per main lift, chronological e1RM
         public var currentWeek: Int
         public var deloadWeek: Int
+        public var trainingStreak: Int                    // consecutive days trained w/o a full rest
 
         public struct Lift: Sendable { public let name: String; public let e1rm: [Double]
             public init(name: String, e1rm: [Double]) { self.name = name; self.e1rm = e1rm } }
 
         public init(readiness: [Double], hrv: [Double], lifts: [Lift],
-                    currentWeek: Int, deloadWeek: Int = 5) {
+                    currentWeek: Int, deloadWeek: Int = 5, trainingStreak: Int = 0) {
             self.readiness = readiness; self.hrv = hrv; self.lifts = lifts
             self.currentWeek = currentWeek; self.deloadWeek = deloadWeek
+            self.trainingStreak = trainingStreak
         }
     }
 
@@ -114,6 +116,14 @@ public enum InsightEngine {
                     title: "\(name) has stalled",
                     message: "No e1RM progress on \(name) lately. Try a small load bump, an extra rep, or back off then re-approach."))
             }
+        }
+
+        // Long unbroken training run — logging a Full Rest in TRAIN resets this.
+        if FatigueEngine.recommendsRest(i.trainingStreak) {
+            out.append(.init(
+                id: "rest-streak", severity: .caution, systemImage: "bed.double",
+                title: "\(i.trainingStreak) days without a full rest",
+                message: "You've trained \(i.trainingStreak) days straight. A full rest day will help you recover and grow — log one in TRAIN."))
         }
 
         // Positive reinforcement only when nothing needs attention.

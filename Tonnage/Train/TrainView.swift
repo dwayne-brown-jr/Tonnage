@@ -9,6 +9,7 @@ struct TrainView: View {
     @Environment(\.modelContext) private var context
     @Environment(HealthKitManager.self) private var health
     @Query(sort: \Program.createdAt) private var programs: [Program]
+    @Query private var allWorkouts: [LoggedWorkout]   // for the days-since-rest training streak
 
     @AppStorage("currentBlock") private var currentBlock = 1
     // Shared with COACH so it can answer about the exact session/day on screen.
@@ -142,7 +143,8 @@ struct TrainView: View {
             // Always shown — even with no data it reads as a "Connect Apple Health"
             // prompt and keeps the Recovery screen discoverable.
             ReadinessCard(readiness: readiness,
-                          today: TodayPlan.verdict(band: readiness.band, focus: session?.name, dayType: dayType)) {
+                          today: TodayPlan.verdict(band: readiness.band, focus: session?.name, dayType: dayType,
+                                                   trainingStreak: FatigueEngine.trainingStreak(workouts: allWorkouts))) {
                 showRecovery = true
             }
             switch dayType {

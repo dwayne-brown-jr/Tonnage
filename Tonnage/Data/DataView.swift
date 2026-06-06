@@ -16,6 +16,7 @@ private enum ProgressionMetric: String, CaseIterable {
 struct DataView: View {
     @Query(sort: \LoggedWorkout.weekNumber) private var workouts: [LoggedWorkout]
     @Query(sort: \Program.createdAt) private var programs: [Program]
+    @Query(sort: \Activity.date, order: .reverse) private var activities: [Activity]
     @Environment(HealthKitManager.self) private var health
     @AppStorage("currentBlock") private var currentBlock = 1
 
@@ -56,6 +57,7 @@ struct DataView: View {
                 Color.surface.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: DS.Spacing.lg) {
+                        if hasRecentDays { weekStripCard }
                         if hasData {
                             summary
                             weeklyCard
@@ -89,6 +91,82 @@ struct DataView: View {
         }
         .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
         .sheet(isPresented: $showWorkoutPicker) { WorkoutPickerSheet(workouts: shareableWorkouts) }
+    }
+
+    // MARK: Last 7 days strip
+
+    private enum DayStatus { case lift, activeRest, fullRest, cardio, empty }
+
+    private var last7Days: [Date] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: .now)
+        return (0..<7).reversed().compactMap { cal.date(byAdding: .day, value: -$0, to: today) }
+    }
+    private var hasRecentDays: Bool { last7Days.contains { dayStatus(on: $0) != .empty } }
+
+    private func dayStatus(on day: Date) -> DayStatus {
+        let cal = Calendar.current
+        if workouts.contains(where: { cal.isDate($0.date, inSameDayAs: day) && $0.dayType == .lift && $0.completedSetCount > 0 }) { return .lift }
+        if workouts.contains(where: { cal.isDate($0.date, inSameDayAs: day) && $0.dayType == .fullRest }) { return .fullRest }
+        if workouts.contains(where: { cal.isDate($0.date, inSameDayAs: day) && $0.dayType == .activeRest }) { return .activeRest }
+        if activities.contains(where: { cal.isDate($0.date, inSameDayAs: day) }) { return .cardio }
+        return .empty
+    }
+
+    private var weekStripCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            HStack(spacing: 0) {
+                Text("Last 7 Days").dsLabel()
+                InfoPopoverButton(title: "Last 7 Days",
+                    message: "Your week at a glance — Lift, Active Rest, Full Rest, or Cardio per day. Rest days you log in TRAIN show up here, and a long run without a full rest will nudge you to take one.")
+            }
+            HStack(spacing: DS.Spacing.xs) {
+                ForEach(last7Days, id: \.self) { day in dayCell(day) }
+            }
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous).strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+    }
+
+    private func dayCell(_ day: Date) -> some View {
+        let status = dayStatus(on: day)
+        let isToday = Calendar.current.isDateInToday(day)
+        let letter = day.formatted(.dateTime.weekday(.narrow))
+        return VStack(spacing: 6) {
+            Text(letter)
+                .font(.system(.caption2, weight: .semibold))
+                .foregroundStyle(isToday ? Color.accent : Color.textTertiary)
+            ZStack {
+                Circle()
+                    .fill(status == .lift ? Color.accent.opacity(0.18) : Color.surfaceElevated2)
+                    .overlay(Circle().strokeBorder(isToday ? Color.accent : Color.clear, lineWidth: 1.5))
+                Image(systemName: dayIcon(status))
+                    .font(.system(size: 14, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(dayTint(status))
+            }
+            .frame(width: 38, height: 38)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func dayIcon(_ s: DayStatus) -> String {
+        switch s {
+        case .lift:       "dumbbell.fill"
+        case .activeRest: "figure.walk"
+        case .fullRest:   "bed.double.fill"
+        case .cardio:     "figure.run"
+        case .empty:      "minus"
+        }
+    }
+    private func dayTint(_ s: DayStatus) -> Color {
+        switch s {
+        case .lift:                          Color.accent
+        case .activeRest, .fullRest, .cardio: Color.textSecondary
+        case .empty:                          Color.textTertiary
+        }
     }
 
     // MARK: Sharing

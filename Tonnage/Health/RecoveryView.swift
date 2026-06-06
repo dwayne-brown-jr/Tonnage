@@ -35,7 +35,8 @@ struct RecoveryView: View {
             readiness: readinessTrend.map(\.value),
             hrv: series.hrv.map(\.value),
             lifts: lifts,
-            currentWeek: trainWeek))
+            currentWeek: trainWeek,
+            trainingStreak: FatigueEngine.trainingStreak(workouts: workouts)))
     }
 
     var body: some View {

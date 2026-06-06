@@ -56,6 +56,13 @@ final class HealthKitManager {
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
+    /// Whether any recovery/body signal actually came back. Read auth is opaque, so this is
+    /// how we tell "connected and working" from "connected but nothing here yet" (e.g. no
+    /// Apple Watch, or reads were denied) — without ever claiming a false "Connected".
+    var hasRecoveryData: Bool {
+        latestHRV != nil || latestRestingHR != nil || lastNightSleepHours != nil || !bodyweight.isEmpty
+    }
+
     // Types
     private let bodyMass = HKQuantityType(.bodyMass)
     private let restingHR = HKQuantityType(.restingHeartRate)
@@ -385,8 +392,13 @@ final class HealthKitManager {
         await loadBodyweight()
     }
 
-    func saveWorkout(activityType: HKWorkoutActivityType, start: Date, end: Date, energyKcal: Double?) async {
-        guard isAvailable, end > start else { return }
+    /// True only if the workout actually reached Health — returns false when write access
+    /// was denied or the write failed, so callers don't claim a save that didn't happen.
+    @discardableResult
+    func saveWorkout(activityType: HKWorkoutActivityType, start: Date, end: Date, energyKcal: Double?) async -> Bool {
+        guard isAvailable, end > start else { return false }
+        // Workout write status IS reliable (unlike reads) — don't claim success if denied.
+        guard store.authorizationStatus(for: HKObjectType.workoutType()) != .sharingDenied else { return false }
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = activityType
         let builder = HKWorkoutBuilder(healthStore: store, configuration: configuration, device: .local())
@@ -399,25 +411,48 @@ final class HealthKitManager {
             }
             try await builder.endCollection(at: end)
             _ = try await builder.finishWorkout()
+            return true
         } catch {
-            // Non-fatal: the workout is still in SwiftData; Health just didn't get it.
+            return false   // SwiftData still has it; Health just didn't get it.
         }
     }
 
-    /// Convenience for a finished lifting session.
-    func saveLiftingSession(start: Date, end: Date) async {
+    /// Convenience for a finished lifting session. Skips the write if the Watch already
+    /// logged this session to Health (so the watch + phone don't double-write), reporting
+    /// success either way since the workout IS in Health.
+    @discardableResult
+    func saveLiftingSession(start: Date, end: Date) async -> Bool {
+        if await hasOwnWorkout(type: .traditionalStrengthTraining, from: start, to: end) { return true }
         let minutes = max(1, end.timeIntervalSince(start) / 60)
-        await saveWorkout(activityType: .traditionalStrengthTraining, start: start, end: end,
-                          energyKcal: minutes * 5)   // rough estimate
+        return await saveWorkout(activityType: .traditionalStrengthTraining, start: start, end: end,
+                                 energyKcal: minutes * 5)   // rough estimate
     }
 
     /// Convenience for a logged MOVE activity.
-    func saveActivity(_ activity: Activity) async {
+    @discardableResult
+    func saveActivity(_ activity: Activity) async -> Bool {
         let end = activity.date
         let start = end.addingTimeInterval(-Double(max(1, activity.durationMinutes)) * 60)
-        await saveWorkout(activityType: activity.kind.hkActivityType,
-                          start: start, end: end,
-                          energyKcal: Double(activity.durationMinutes) * activity.kind.kcalPerMinute)
+        return await saveWorkout(activityType: activity.kind.hkActivityType,
+                                 start: start, end: end,
+                                 energyKcal: Double(activity.durationMinutes) * activity.kind.kcalPerMinute)
+    }
+
+    /// Whether Tonnage (phone OR Watch) already wrote a workout of `type` overlapping this
+    /// window — prevents the Watch's live session and the phone's "Save to Health" button
+    /// from both logging the same strength session.
+    private func hasOwnWorkout(type: HKWorkoutActivityType, from start: Date, to end: Date) async -> Bool {
+        guard isAvailable else { return false }
+        let pad: TimeInterval = 60 * 60
+        let predicate = HKQuery.predicateForSamples(withStart: start.addingTimeInterval(-pad),
+                                                    end: end.addingTimeInterval(pad))
+        let descriptor = HKSampleQueryDescriptor(predicates: [.workout(predicate)],
+                                                 sortDescriptors: [], limit: 50)
+        guard let workouts = try? await descriptor.result(for: store) else { return false }
+        return workouts.contains {
+            $0.workoutActivityType == type &&
+            $0.sourceRevision.source.bundleIdentifier.hasPrefix("com.dwayne.tonnage")
+        }
     }
 
     // MARK: Import external workouts

@@ -29,6 +29,7 @@ struct TrainView: View {
     @State private var restDate: Date = .now
     @State private var expandedID: PersistentIdentifier?
     @State private var sessionSaved = false
+    @State private var saveFailed = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
     @State private var showRecovery = false
     @State private var showPlanBlock = false
@@ -255,32 +256,45 @@ struct TrainView: View {
     }
 
     private func saveSessionButton(_ workout: LoggedWorkout) -> some View {
-        Button {
-            Task {
-                if !health.hasRequested { await health.requestAuthorization() }
-                await health.saveLiftingSession(start: workout.date, end: .now)
-                withAnimation(DS.spring) { sessionSaved = true }
-                Haptics.success()
+        VStack(spacing: DS.Spacing.xs) {
+            Button {
+                Task {
+                    if !health.hasRequested { await health.requestAuthorization() }
+                    let ok = await health.saveLiftingSession(start: workout.date, end: .now)
+                    if ok {
+                        withAnimation(DS.spring) { sessionSaved = true; saveFailed = false }
+                        Haptics.success()
+                    } else {
+                        withAnimation(DS.spring) { saveFailed = true }
+                        Haptics.warning()
+                    }
+                }
+            } label: {
+                Label(sessionSaved ? "Saved to Apple Health" : "Save Session to Apple Health",
+                      systemImage: sessionSaved ? "checkmark.circle.fill" : "heart.fill")
+                    .font(.system(.subheadline, weight: .bold))
+                    .foregroundStyle(sessionSaved ? Color.success : Color.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, DS.Spacing.md)
+                    .background(
+                        RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                            .fill(sessionSaved ? Color.surfaceElevated : Color.accent)
+                    )
             }
-        } label: {
-            Label(sessionSaved ? "Saved to Apple Health" : "Save Session to Apple Health",
-                  systemImage: sessionSaved ? "checkmark.circle.fill" : "heart.fill")
-                .font(.system(.subheadline, weight: .bold))
-                .foregroundStyle(sessionSaved ? Color.success : Color.onAccent)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, DS.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                        .fill(sessionSaved ? Color.surfaceElevated : Color.accent)
-                )
+            .buttonStyle(.plain)
+            .disabled(sessionSaved)
+            if saveFailed {
+                Text("Couldn't save — turn on Workouts for Tonnage in Health → Sharing.")
+                    .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(sessionSaved)
     }
 
     private func reload() {
         guard let session else { return }
         sessionSaved = false
+        saveFailed = false
         publishFocus(session)
         switch dayType {
         case .lift:

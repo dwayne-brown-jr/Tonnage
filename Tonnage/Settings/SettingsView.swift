@@ -7,6 +7,8 @@ import TonnageCore
 struct SettingsView: View {
     @Environment(HealthKitManager.self) private var health
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
+    @State private var showMail = false
     @Query private var workouts: [LoggedWorkout]
     @Query private var activities: [Activity]
 
@@ -49,6 +51,7 @@ struct SettingsView: View {
                         remindersCard
                         howItWorksCard
                         dataCard
+                        feedbackCard
 #if DEBUG
                         debugCard
 #endif
@@ -74,6 +77,10 @@ struct SettingsView: View {
         .fullScreenCover(isPresented: $showHowItWorks) {
             OnboardingView(onFinish: { showHowItWorks = false }, finishTitle: "Done")
                 .environment(health)   // covers don't reliably inherit @Observable env
+        }
+        .sheet(isPresented: $showMail) {
+            MailComposeView(recipient: Feedback.recipient, subject: Feedback.subject, body: Feedback.body)
+                .ignoresSafeArea()
         }
         .sheet(isPresented: $showProfileEditor) {
             ProfileSetupView(onFinish: { showProfileEditor = false }, finishTitle: "Done")
@@ -254,10 +261,15 @@ struct SettingsView: View {
     }
 
     private var statusPill: some View {
-        let connected = health.hasRequested && health.isAvailable
-        return Text(connected ? "Connected" : "Off")
+        // Honest three-state: Off (not connected) / No data (connected but nothing read —
+        // e.g. no Apple Watch) / Connected (data flowing). Never a false green "Connected".
+        let (text, color): (String, Color) =
+            !(health.hasRequested && health.isAvailable) ? ("Off", Color.textTertiary)
+            : health.hasRecoveryData ? ("Connected", Color.success)
+            : ("No data", Color.textSecondary)
+        return Text(text)
             .font(.system(.caption, weight: .bold))
-            .foregroundStyle(connected ? Color.success : Color.textTertiary)
+            .foregroundStyle(color)
             .padding(.horizontal, DS.Spacing.sm).padding(.vertical, 3)
             .background(Capsule().fill(Color.surfaceElevated2))
     }
@@ -521,6 +533,32 @@ struct SettingsView: View {
         }
     }
 #endif
+
+    // MARK: Feedback
+
+    private var feedbackCard: some View {
+        card {
+            Label("Feedback", systemImage: "envelope.fill")
+                .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+            Text("Hit a bug or have an idea? I read everything — your version and device are attached automatically.")
+                .font(DSFont.callout).foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                if MailComposeView.canSend {
+                    showMail = true
+                } else if let url = Feedback.mailtoURL {
+                    openURL(url)
+                }
+                Haptics.selection()
+            } label: {
+                Label("Send Feedback", systemImage: "paperplane.fill")
+                    .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                    .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+    }
 
     // MARK: About
 

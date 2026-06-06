@@ -15,6 +15,8 @@ struct ExerciseLogCard: View {
     @State private var showingDirections = false
     @State private var showingPlates = false
     @State private var formMode: ExerciseFormMode?
+    /// One-time "how logging works" hint, shown the first time an exercise is expanded.
+    @AppStorage("tip.logging.seen") private var loggingTipSeen = false
 
     private var isExpanded: Bool { expandedID == exercise.persistentModelID }
     private var metrics: [SetMetric] { ExerciseLibrary.metrics(for: exercise.name, isCardio: exercise.isCardio) }
@@ -165,6 +167,8 @@ struct ExerciseLogCard: View {
 
             Divider().overlay(Color.hairline)
 
+            if !loggingTipSeen && !exercise.isCardio { loggingTipBanner }
+
             VStack(spacing: DS.Spacing.xs) {
                 ForEach(Array(exercise.orderedSets.enumerated()), id: \.element.persistentModelID) { i, set in
                     VStack(spacing: 4) {
@@ -195,6 +199,34 @@ struct ExerciseLogCard: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    /// First-expand coach-mark for the three things people miss: logging reps-left, the
+    /// tappable set-to-set cue, and the long-press warm-up toggle.
+    private var loggingTipBanner: some View {
+        HStack(alignment: .top, spacing: DS.Spacing.sm) {
+            Image(systemName: "lightbulb.fill")
+                .font(.system(size: 13, weight: .bold)).foregroundStyle(Color.accent)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("How logging works")
+                    .font(.system(.caption, weight: .bold)).foregroundStyle(Color.textPrimary)
+                Text("Tap **LEFT** to log reps in reserve — it powers next week's call. Tap a cue to auto-fill the next set. Long-press a set to mark a warm-up.")
+                    .font(.system(.caption2)).foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button {
+                withAnimation(DS.spring) { loggingTipSeen = true }
+                Haptics.selection()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold)).foregroundStyle(Color.textTertiary)
+                    .padding(4).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(DS.Spacing.sm)
+        .background(Color.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
     }
 
     private func toggleComplete(_ set: LoggedSet) {

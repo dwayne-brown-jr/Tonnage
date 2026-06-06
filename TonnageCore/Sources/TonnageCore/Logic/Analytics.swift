@@ -19,6 +19,49 @@ public enum Analytics {
         public var estimatedOneRepMax: Double { weight * (1 + Double(reps) / 30) }
     }
 
+    public struct MuscleVolume: Sendable, Identifiable, Equatable {
+        /// `nil` = "Other" — movements we don't recognize (custom/ad-hoc names), kept so
+        /// volume is never silently dropped.
+        public let group: MuscleGroup?
+        /// Hard sets = completed working (non-cardio) sets in the window.
+        public let sets: Int
+        public var id: String { group?.rawValue ?? "other" }
+        public var label: String { group?.label ?? "Other" }
+    }
+
+    /// Evidence-based weekly hard-set landmarks per muscle (hypertrophy): ~10 is the
+    /// minimum effective volume, ~20 the top of the productive range for most lifters.
+    public static let weeklySetsMEV = 10
+    public static let weeklySetsMAV = 20
+
+    /// Hard (completed, non-cardio) sets per muscle group for the given workouts — the
+    /// caller filters the window (e.g. one week). Cardio is excluded; unrecognized
+    /// movements roll up into "Other". Ordered by the muscle enum with Other last; groups
+    /// with zero sets are omitted.
+    public static func setsPerMuscle(_ workouts: [LoggedWorkout]) -> [MuscleVolume] {
+        var counts: [MuscleGroup?: Int] = [:]
+        for w in workouts where w.dayType == .lift {
+            for ex in (w.exercises ?? []) where !ex.isCardio {
+                let done = ex.completedSetCount
+                guard done > 0 else { continue }
+                counts[ExerciseLibrary.muscleGroup(for: ex.name), default: 0] += done
+            }
+        }
+        var result = MuscleGroup.allCases.compactMap { g -> MuscleVolume? in
+            guard g != .cardio, let c = counts[g], c > 0 else { return nil }
+            return MuscleVolume(group: g, sets: c)
+        }
+        if let other = counts[nil], other > 0 {
+            result.append(MuscleVolume(group: nil, sets: other))
+        }
+        return result
+    }
+
+    /// The latest week within `workouts` that has any completed lifting (nil if none).
+    public static func latestLoggedWeek(_ workouts: [LoggedWorkout]) -> Int? {
+        workouts.filter { $0.dayType == .lift && $0.completedSetCount > 0 }.map(\.weekNumber).max()
+    }
+
     /// Total tonnage per week across the block (0 for weeks with no logged volume).
     public static func weeklyVolume(_ workouts: [LoggedWorkout], weeks: Int = 5) -> [WeekVolume] {
         (1...weeks).map { week in

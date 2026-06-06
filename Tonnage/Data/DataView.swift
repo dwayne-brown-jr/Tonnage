@@ -23,6 +23,11 @@ struct DataView: View {
     private var names: [String] { Analytics.loggedExerciseNames(scoped) }
     private var volume: [Analytics.WeekVolume] { Analytics.weeklyVolume(scoped) }
     private var hasData: Bool { Analytics.totalSets(scoped) > 0 }
+    private var muscleWeek: Int? { Analytics.latestLoggedWeek(scoped) }
+    private var muscleVolume: [Analytics.MuscleVolume] {
+        guard let wk = muscleWeek else { return [] }
+        return Analytics.setsPerMuscle(scoped.filter { $0.weekNumber == wk })
+    }
 
     private var sessionsPerWeek: Int { programs.first?.orderedSessions.count ?? 0 }
     private var adherence: BlockAdherence {
@@ -42,6 +47,7 @@ struct DataView: View {
                             summary
                             if sessionsPerWeek > 0 { adherenceCard }
                             if !recentPRs.isEmpty { prsCard }
+                            muscleVolumeCard
                             volumeCard
                             progressionCard
                             bodyweightCard
@@ -246,6 +252,70 @@ struct DataView: View {
             }
         }
         .padding(.vertical, DS.Spacing.sm)
+    }
+
+    // MARK: Sets per muscle (weekly hard-set volume vs the 10–20 landmark)
+
+    @ViewBuilder private var muscleVolumeCard: some View {
+        if let wk = muscleWeek, !muscleVolume.isEmpty {
+            VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Sets per Muscle").dsLabel()
+                        Spacer()
+                        Text("Week \(wk)")
+                            .font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
+                    }
+                    Text("Hard sets this week · productive range \(Analytics.weeklySetsMEV)–\(Analytics.weeklySetsMAV)")
+                        .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                }
+                VStack(spacing: DS.Spacing.sm) {
+                    ForEach(muscleVolume) { muscleRow($0) }
+                }
+            }
+            .padding(DS.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+        }
+    }
+
+    private func muscleRow(_ mv: Analytics.MuscleVolume) -> some View {
+        // Scale the track so the 10–20 band sits mid-bar, with headroom past 20.
+        let maxScale = Double(max(Analytics.weeklySetsMAV + 4, mv.sets))
+        let color = volumeColor(mv.sets)
+        return HStack(spacing: DS.Spacing.md) {
+            Text(mv.label)
+                .font(.system(.caption, weight: .semibold))
+                .foregroundStyle(Color.textSecondary)
+                .frame(width: 76, alignment: .leading)
+                .lineLimit(1).minimumScaleFactor(0.8)
+            GeometryReader { geo in
+                let w = geo.size.width
+                let lo = w * Double(Analytics.weeklySetsMEV) / maxScale
+                let hi = w * Double(Analytics.weeklySetsMAV) / maxScale
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.surfaceElevated2)
+                    Rectangle().fill(Color.success.opacity(0.16))   // productive zone
+                        .frame(width: max(0, hi - lo)).offset(x: lo)
+                    Capsule().fill(color)
+                        .frame(width: max(4, w * Double(mv.sets) / maxScale))
+                }
+            }
+            .frame(height: 10)
+            Text("\(mv.sets)")
+                .font(DSFont.numberSm).monospacedDigit()
+                .foregroundStyle(color)
+                .frame(width: 26, alignment: .trailing)
+        }
+    }
+
+    /// Under the minimum effective volume → muted; in the 10–20 range → green; over → orange.
+    private func volumeColor(_ sets: Int) -> Color {
+        if sets < Analytics.weeklySetsMEV { return Color.textSecondary }
+        if sets <= Analytics.weeklySetsMAV { return Color.success }
+        return Color.accent
     }
 
     // MARK: Weekly volume

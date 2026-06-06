@@ -54,4 +54,44 @@ struct AnalyticsTests {
         #expect(Analytics.sessionsLogged(w) == 2)
         #expect(Analytics.totalVolume(w) == 3010)   // 1660 + 1350
     }
+
+    // MARK: Sets per muscle
+
+    /// Builds an exercise with `done` completed sets + `pending` incomplete sets.
+    private func exercise(_ name: String, isCardio: Bool = false, done: Int, pending: Int = 0, order: Int) -> LoggedExercise {
+        let ex = LoggedExercise(name: name, isCardio: isCardio, sortOrder: order)
+        var sets: [LoggedSet] = (0..<done).map { LoggedSet(weight: 100, reps: 8, completed: true, sortOrder: $0) }
+        sets += (0..<pending).map { LoggedSet(weight: 100, reps: 8, completed: false, sortOrder: done + $0) }
+        ex.sets = sets
+        return ex
+    }
+
+    @Test("Sets per muscle counts hard sets, maps by name, excludes cardio/incomplete, buckets unknowns")
+    func setsPerMuscle() {
+        let w1 = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "Full Body")
+        w1.exercises = [
+            exercise("Barbell Bench Press", done: 3, pending: 1, order: 0),  // chest 3 (pending ignored)
+            exercise("Barbell Back Squat", done: 2, order: 1),               // quads 2
+            exercise("Mystery Move", done: 2, order: 2),                     // Other 2 (unknown name)
+            exercise("Bike intervals", isCardio: true, done: 5, order: 3)    // excluded (cardio)
+        ]
+        let rest = LoggedWorkout(weekNumber: 1, dayType: .fullRest, sessionName: "Rest Day")
+
+        let result = Analytics.setsPerMuscle([w1, rest])
+        // Ordered by muscle enum (chest before quads), Other last; cardio absent.
+        #expect(result.map(\.label) == ["Chest", "Quads", "Other"])
+        #expect(result.map(\.sets) == [3, 2, 2])
+        #expect(!result.contains { $0.label == "Cardio" })
+    }
+
+    @Test("Latest logged week ignores empty + rest workouts")
+    func latestLoggedWeek() {
+        let w1 = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "A")
+        w1.exercises = [exercise("Barbell Bench Press", done: 2, order: 0)]
+        let w3empty = LoggedWorkout(weekNumber: 3, dayType: .lift, sessionName: "A")   // no sets
+        let w4rest = LoggedWorkout(weekNumber: 4, dayType: .fullRest, sessionName: "Rest Day")
+
+        #expect(Analytics.latestLoggedWeek([w1, w3empty, w4rest]) == 1)
+        #expect(Analytics.latestLoggedWeek([w3empty, w4rest]) == nil)
+    }
 }

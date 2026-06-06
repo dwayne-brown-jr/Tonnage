@@ -24,6 +24,9 @@ struct TrainView: View {
     // Day type is a transient mode, NOT persisted — it resets to Lift each launch so the
     // screen never gets stuck showing a rest day.
     @State private var dayType: DayType = .lift
+    // Which calendar day a rest is being logged for. Defaults to today; backdate it to
+    // record a rest you took but didn't log (e.g. yesterday). Resets to today each launch.
+    @State private var restDate: Date = .now
     @State private var expandedID: PersistentIdentifier?
     @State private var sessionSaved = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
@@ -78,7 +81,14 @@ struct TrainView: View {
         .onChange(of: currentBlock) { PhoneConnectivity.shared.pushContext() }   // sync active block to watch
         .onChange(of: week) { reload() }
         .onChange(of: sessionIndex) { reload() }
-        .onChange(of: dayType) { reload() }
+        .onChange(of: dayType) { old, new in
+            if old == .lift && new != .lift { restDate = .now }   // each rest-logging session starts at today
+            reload()
+        }
+        .onChange(of: restDate) {
+            guard dayType != .lift else { return }   // rest date only matters in rest mode
+            store.loadRest(block: selectedBlock, week: week, date: restDate)
+        }
         .onChange(of: sessions.count) {
             if !sessions.indices.contains(sessionIndex) { sessionIndex = 0 }
             reload()
@@ -153,8 +163,9 @@ struct TrainView: View {
                 RestDayView(
                     dayType: dayType,
                     isLogged: store.workout?.dayType == dayType,
+                    date: $restDate,
                     onLog: {
-                        store.logRestDay(block: selectedBlock, week: week, dayType: dayType)
+                        store.logRestDay(block: selectedBlock, week: week, dayType: dayType, date: restDate)
                     }
                 )
             }
@@ -276,7 +287,7 @@ struct TrainView: View {
                     ?? workout.orderedExercises.first?.persistentModelID
             }
         case .activeRest, .fullRest:
-            store.loadRest(block: selectedBlock, week: week)
+            store.loadRest(block: selectedBlock, week: week, date: restDate)
         }
         refreshWidget()
     }
@@ -302,7 +313,14 @@ struct TrainView: View {
 private struct RestDayView: View {
     let dayType: DayType
     let isLogged: Bool
+    @Binding var date: Date
     let onLog: () -> Void
+
+    private var isToday: Bool { Calendar.current.isDateInToday(date) }
+    private var dayLabel: String {
+        isToday ? "Today"
+                : date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
 
     var body: some View {
         VStack(spacing: DS.Spacing.lg) {
@@ -323,8 +341,19 @@ private struct RestDayView: View {
                     .multilineTextAlignment(.center)
             }
 
+            // Pick the day this rest is for — defaults to today, or backdate a missed rest.
+            HStack {
+                Text("Rest Day").dsLabel()
+                Spacer()
+                DatePicker("", selection: $date, in: ...Date.now, displayedComponents: [.date])
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .tint(Color.accent)
+            }
+            .padding(.horizontal, DS.Spacing.sm)
+
             Button(action: onLog) {
-                Label(isLogged ? "Rest Logged for Today" : "Log Rest for Today",
+                Label(isLogged ? "Rest Logged for \(dayLabel)" : "Log Rest for \(dayLabel)",
                       systemImage: isLogged ? "checkmark.circle.fill" : "square.and.pencil")
                     .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(isLogged ? Color.success : Color.onAccent)

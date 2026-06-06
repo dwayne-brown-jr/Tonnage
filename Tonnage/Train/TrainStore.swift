@@ -52,22 +52,24 @@ final class TrainStore {
     /// not one of the program's sessions.
     static let restSlotName = "Rest Day"
 
-    /// For active/full-rest days: surface today's rest entry (if any). Never auto-creates.
-    func loadRest(block: Int, week: Int) {
+    /// For active/full-rest days: surface the rest entry for `date` (if any). Never auto-creates.
+    /// `date` defaults to today; pass a past day to retroactively review/log a missed rest.
+    func loadRest(block: Int, week: Int, date: Date = .now) {
         guard context != nil else { return }
         pruneIfEmpty(workout)
         guidance = [:]
-        workout = todaysRest(block: block, week: week)
+        workout = restEntry(block: block, on: date)
     }
 
-    /// Persist a standalone rest day for today — decoupled from any session, so logging a
-    /// rest never touches your Upper/Lower workouts. One entry per calendar day.
-    func logRestDay(block: Int, week: Int, dayType: DayType) {
+    /// Persist a standalone rest day for `date` — decoupled from any session, so logging a
+    /// rest never touches your Upper/Lower workouts. One entry per calendar day; `date`
+    /// defaults to today but can be backdated (e.g. logging yesterday's rest the next morning).
+    func logRestDay(block: Int, week: Int, dayType: DayType, date: Date = .now) {
         guard let context else { return }
-        let w = todaysRest(block: block, week: week)
+        let w = restEntry(block: block, on: date)
             ?? {
-                let new = LoggedWorkout(blockNumber: block, weekNumber: week, dayType: dayType,
-                                        sessionName: Self.restSlotName)
+                let new = LoggedWorkout(date: date, blockNumber: block, weekNumber: week,
+                                        dayType: dayType, sessionName: Self.restSlotName)
                 context.insert(new)
                 return new
             }()
@@ -77,15 +79,17 @@ final class TrainStore {
         Haptics.success()
     }
 
-    /// Today's standalone rest entry for this block/week, if one exists.
-    private func todaysRest(block: Int, week: Int) -> LoggedWorkout? {
+    /// The standalone rest entry for this block on a given calendar day, if one exists.
+    /// Keyed on (block, calendar-day) — NOT week — so backdating a rest into a day that
+    /// fell in a different program-week can't create a second entry for the same real day.
+    private func restEntry(block: Int, on date: Date) -> LoggedWorkout? {
         guard let context else { return nil }
         let name = Self.restSlotName
         let descriptor = FetchDescriptor<LoggedWorkout>(
-            predicate: #Predicate { $0.blockNumber == block && $0.weekNumber == week && $0.sessionName == name }
+            predicate: #Predicate { $0.blockNumber == block && $0.sessionName == name }
         )
         let cal = Calendar.current
-        return (try? context.fetch(descriptor))?.first { cal.isDateInToday($0.date) }
+        return (try? context.fetch(descriptor))?.first { cal.isDate($0.date, inSameDayAs: date) }
     }
 
     // MARK: Set editing

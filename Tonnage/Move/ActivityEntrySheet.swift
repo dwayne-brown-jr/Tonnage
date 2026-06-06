@@ -16,6 +16,9 @@ struct ActivityEntrySheet: View {
     @State private var distance: Double = 0
     @State private var flightsCount: Double = 0
     @State private var detail = ""
+    /// When the activity happened. Defaults to now; backdate it to log a session
+    /// for a day the app didn't auto-import (e.g. a bike ride from Apple Fitness).
+    @State private var date: Date = .now
 
     init(kind: ActivityKind) {
         self.kind = kind
@@ -39,6 +42,7 @@ struct ActivityEntrySheet: View {
                         if kind == .custom {
                             textField("Activity", text: $name, placeholder: "e.g. Hike")
                         }
+                        dateRow
                         metricRow("Duration", value: $minutes, step: 5, range: 0...600, unit: "min")
                         if showsDistance {
                             metricRow("Distance", value: $distance, step: 0.1, range: 0...200, unit: "mi", decimal: true)
@@ -82,6 +86,18 @@ struct ActivityEntrySheet: View {
         }
     }
 
+    private var dateRow: some View {
+        HStack {
+            Text("Date").dsLabel()
+            Spacer()
+            DatePicker("", selection: $date, in: ...Date.now,
+                       displayedComponents: [.date, .hourAndMinute])
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .tint(Color.accent)
+        }
+    }
+
     private func metricRow(_ label: String, value: Binding<Double>, step: Double,
                            range: ClosedRange<Double>, unit: String, decimal: Bool = false) -> some View {
         HStack {
@@ -109,7 +125,8 @@ struct ActivityEntrySheet: View {
             durationMinutes: Int(minutes),
             distanceMiles: showsDistance && distance > 0 ? distance : nil,
             flights: showsFlights && flightsCount > 0 ? Int(flightsCount) : nil,
-            detail: detail
+            detail: detail,
+            date: date
         )
         context.insert(activity)
         try? context.save()

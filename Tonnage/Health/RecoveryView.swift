@@ -1,18 +1,41 @@
 import SwiftUI
+import SwiftData
 import Charts
 import TonnageCore
 
 /// The "Recovery" detail screen (tapped from the Readiness card on TRAIN): today's
-/// readiness + its drivers, then trend charts for Readiness, HRV, resting HR, and
-/// sleep over the last two weeks. All data is HealthKit-derived.
+/// readiness + its drivers, plain-language insights from the trends, then trend charts
+/// for Readiness, HRV, resting HR, and sleep over the last two weeks. HealthKit-derived.
 struct RecoveryView: View {
     @Environment(HealthKitManager.self) private var health
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \LoggedWorkout.weekNumber) private var workouts: [LoggedWorkout]
+    @AppStorage("currentBlock") private var currentBlock = 1
+    @AppStorage("train.week") private var trainWeek = 1
     @State private var series = RecoverySeries()
     @State private var loaded = false
     @State private var connecting = false
 
     private var readiness: Readiness { health.currentReadiness() }
+
+    // MARK: Insights (trend storytelling + advisory deload)
+
+    private var scopedWorkouts: [LoggedWorkout] { workouts.filter { $0.blockNumber == currentBlock } }
+
+    private var insights: [TrainingInsight] {
+        let lifts = Analytics.loggedExerciseNames(scopedWorkouts)
+            .filter { ExerciseLibrary.isCompound($0) }
+            .map { name in
+                InsightEngine.Inputs.Lift(
+                    name: name,
+                    e1rm: Analytics.topSetSeries(for: name, in: scopedWorkouts).map(\.estimatedOneRepMax))
+            }
+        return InsightEngine.generate(.init(
+            readiness: readinessTrend.map(\.value),
+            hrv: series.hrv.map(\.value),
+            lifts: lifts,
+            currentWeek: trainWeek))
+    }
 
     var body: some View {
         NavigationStack {
@@ -23,6 +46,7 @@ struct RecoveryView: View {
                         header
                         if !health.hasRequested && readiness.band == .unknown { connectCard }
                         if !readiness.drivers.isEmpty { driversCard }
+                        if loaded && !insights.isEmpty { insightsCard }
                         if loaded {
                             trendCard("Readiness", series: readinessTrend, unit: "", fixedDomain: 0...100)
                             trendCard("HRV", series: series.hrv, unit: "ms")
@@ -100,6 +124,44 @@ struct RecoveryView: View {
         .padding(DS.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
+
+    private var insightsCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            Text("Insights").dsLabel()
+            ForEach(insights) { insight in
+                HStack(alignment: .top, spacing: DS.Spacing.md) {
+                    Image(systemName: insight.systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(insightColor(insight.severity))
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(insight.title)
+                            .font(.system(.subheadline, weight: .bold))
+                            .foregroundStyle(Color.textPrimary)
+                        Text(insight.message)
+                            .font(DSFont.callout)
+                            .foregroundStyle(Color.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+    }
+
+    private func insightColor(_ s: TrainingInsight.Severity) -> Color {
+        switch s {
+        case .positive: Color.success
+        case .info:     Color.accent
+        case .caution:  Color.accent
+        }
     }
 
     private var connectCard: some View {

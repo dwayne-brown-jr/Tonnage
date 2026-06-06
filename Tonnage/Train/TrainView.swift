@@ -172,6 +172,9 @@ struct TrainView: View {
                     date: $restDate,
                     onLog: {
                         store.logRestDay(block: selectedBlock, week: week, dayType: dayType, date: restDate)
+                    },
+                    onBackToWorkout: {
+                        withAnimation(DS.snappySpring) { dayType = .lift }
                     }
                 )
             }
@@ -334,6 +337,7 @@ private struct RestDayView: View {
     let isLogged: Bool
     @Binding var date: Date
     let onLog: () -> Void
+    let onBackToWorkout: () -> Void
 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
     private var dayLabel: String {
@@ -385,6 +389,22 @@ private struct RestDayView: View {
             }
             .buttonStyle(.plain)
             .disabled(isLogged)
+
+            // Clear way back to logging lifts — subtle before you log, the obvious next
+            // step (accent) once the rest is logged, so it's never a dead-end.
+            Button(action: onBackToWorkout) {
+                Label("Back to Workout", systemImage: "arrow.uturn.backward")
+                    .font(.system(.subheadline, weight: .bold))
+                    .foregroundStyle(isLogged ? Color.onAccent : Color.textSecondary)
+                    .frame(maxWidth: isLogged ? .infinity : nil)
+                    .padding(.horizontal, DS.Spacing.lg)
+                    .padding(.vertical, DS.Spacing.md)
+                    .background(
+                        RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                            .fill(isLogged ? Color.accent : Color.clear)
+                    )
+            }
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, minHeight: 380)
         .padding(DS.Spacing.lg)

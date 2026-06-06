@@ -31,6 +31,7 @@ enum DemoData {
                 let workout = LoggedWorkout(date: date, blockNumber: block, weekNumber: week,
                                             dayType: .lift, sessionName: session.name,
                                             sessionTemplate: session)
+                context.insert(workout)     // insert BEFORE wiring relationships so children cascade-save
                 workout.exercises = session.orderedExercises.enumerated().map { ei, t in
                     let ex = LoggedExercise(name: t.name, isCompound: t.isCompound, isCardio: t.isCardio,
                                             sortOrder: ei, prescribedSets: t.prescribedSets,
@@ -39,7 +40,6 @@ enum DemoData {
                     ex.sets = demoSets(for: t, week: week)
                     return ex
                 }
-                context.insert(workout)
             }
             // A standalone full-rest day mid-week, to populate rest history too.
             if let restDate = cal.date(byAdding: .day, value: -((weeks - week) * 7 + 3), to: today) {

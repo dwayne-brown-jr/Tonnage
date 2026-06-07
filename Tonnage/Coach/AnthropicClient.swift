@@ -53,10 +53,11 @@ struct AnthropicClient {
     let apiKey: String
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
-    func send(system: String, history: [CoachMessage], model: CoachModel, maxTokens: Int = 1024) async throws -> String {
+    func send(system: String, history: [CoachMessage], model: CoachModel, maxTokens: Int = 1024,
+              timeout: TimeInterval = 60) async throws -> String {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 60
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")

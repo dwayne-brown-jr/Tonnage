@@ -186,6 +186,10 @@ struct SettingsView: View {
                     .background(Capsule().fill(Color.surfaceElevated2))
             }
 
+            Text("Coach features send your profile, training history, recovery metrics, and (for photo estimates) your photo to Anthropic to generate replies. Nothing else leaves your device.")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
             // Model
             HStack {
                 Text("Model").dsLabel()

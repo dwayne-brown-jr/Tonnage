@@ -57,7 +57,7 @@ final class CoachViewModel {
 
         do {
             let reply = try await AnthropicClient(apiKey: key)
-                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024)
+                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024, timeout: 35)
             append(CoachMessage(role: .assistant, text: reply))
             SharedKeyQuota.recordUse()
         } catch {
@@ -82,7 +82,7 @@ final class CoachViewModel {
         defer { isSending = false }
         do {
             let reply = try await AnthropicClient(apiKey: key)
-                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024)
+                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024, timeout: 35)
             append(CoachMessage(role: .assistant, text: reply))
             SharedKeyQuota.recordUse()
         } catch {

@@ -54,7 +54,10 @@ struct RecoveryView: View {
                         }
                         if !readiness.drivers.isEmpty { driversCard }
                         if loaded && !insights.isEmpty { insightsCard }
-                        if loaded {
+                        if loaded && !health.hasRecoveryData {
+                            // The noDataCard above already explains it — don't also stack four
+                            // empty "needs Apple Watch data" trend cards for a Watch-less user.
+                        } else if loaded {
                             trendCard("Readiness", series: readinessTrend, unit: "", fixedDomain: 0...100,
                                       info: "Your daily recovery read — HRV, resting heart rate, and sleep scored 0–100 against your own baselines. The trend is plotted against your current baseline.")
                             trendCard("HRV", series: series.hrv, unit: "ms",

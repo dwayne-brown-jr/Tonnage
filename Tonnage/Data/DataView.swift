@@ -578,9 +578,15 @@ struct DataView: View {
                   info: "Your bodyweight trend from Apple Health. Read it against your goal: recomp = steady weight while strength climbs; bulk = slow gain; cut = slow loss.") {
             if !health.isAvailable {
                 placeholder(icon: "heart.slash", text: "Apple Health isn't available on this device.")
-            } else if !health.bodyweight.isEmpty {
+            } else if health.bodyweight.count >= 2 {
                 VStack(alignment: .leading, spacing: DS.Spacing.md) {
                     bodyweightChart
+                    logWeightButton
+                }
+            } else if !health.bodyweight.isEmpty {
+                // One sample would plot as a lone dot — ask for a second to start the trend.
+                VStack(spacing: DS.Spacing.md) {
+                    placeholder(icon: "scalemass", text: "One weight logged — add another to start the trend.")
                     logWeightButton
                 }
             } else if health.hasRequested {

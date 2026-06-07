@@ -440,7 +440,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tonnage/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Tonnage reads your bodyweight, sleep, and heart rate to track recomp and tailor your coaching.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Tonnage reads your bodyweight, sleep, heart rate, heart-rate variability, active energy, and workouts to score your daily readiness, track recomp, and tailor your coaching.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Tonnage saves your workouts and bodyweight to Apple Health.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -475,7 +475,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tonnage/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Tonnage reads your bodyweight, sleep, and heart rate to track recomp and tailor your coaching.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Tonnage reads your bodyweight, sleep, heart rate, heart-rate variability, active energy, and workouts to score your daily readiness, track recomp, and tailor your coaching.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Tonnage saves your workouts and bodyweight to Apple Health.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

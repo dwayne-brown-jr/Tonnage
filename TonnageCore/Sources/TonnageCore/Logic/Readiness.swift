@@ -9,16 +9,30 @@ public struct ReadinessInputs: Sendable, Equatable {
     public var restingHRBaseline: Double?
     public var sleepHours: Double?
     public var trainedYesterday: Bool
+    /// Overnight body/skin temperature (°C) and your personal baseline. A ring (Oura,
+    /// Apple Watch) writes this to HealthKit; a rise vs baseline flags illness / strain.
+    public var bodyTempC: Double?
+    public var bodyTempBaselineC: Double?
+    /// Overnight respiratory rate (breaths/min) and baseline. Elevated breathing at rest
+    /// is an early stress / illness signal.
+    public var respiratoryRate: Double?
+    public var respiratoryRateBaseline: Double?
 
     public init(hrvMs: Double? = nil, hrvBaselineMs: Double? = nil,
                 restingHR: Double? = nil, restingHRBaseline: Double? = nil,
-                sleepHours: Double? = nil, trainedYesterday: Bool = false) {
+                sleepHours: Double? = nil, trainedYesterday: Bool = false,
+                bodyTempC: Double? = nil, bodyTempBaselineC: Double? = nil,
+                respiratoryRate: Double? = nil, respiratoryRateBaseline: Double? = nil) {
         self.hrvMs = hrvMs
         self.hrvBaselineMs = hrvBaselineMs
         self.restingHR = restingHR
         self.restingHRBaseline = restingHRBaseline
         self.sleepHours = sleepHours
         self.trainedYesterday = trainedYesterday
+        self.bodyTempC = bodyTempC
+        self.bodyTempBaselineC = bodyTempBaselineC
+        self.respiratoryRate = respiratoryRate
+        self.respiratoryRateBaseline = respiratoryRateBaseline
     }
 }
 
@@ -87,6 +101,35 @@ public enum ReadinessEngine {
             score += pts
             let sign: Readiness.Driver.Sign = dev > 0.02 ? .positive : (dev < -0.02 ? .negative : .neutral)
             drivers.append(.init("Resting HR \(Int(rhr.rounded())) bpm", sign, points: pts, magnitude: 16))
+        }
+
+        // Overnight body temperature vs baseline — a rise flags illness / incomplete recovery
+        // (this is the signal that makes a ring's readiness feel "smart"). A 0.1°C deadband
+        // absorbs normal night-to-night skin-temp noise; elevation is penalized, cooler gives
+        // only a small credit (being a touch cold isn't strongly restorative).
+        if let temp = i.bodyTempC, let base = i.bodyTempBaselineC, base > 0 {
+            signals += 1
+            let devC = temp - base
+            let over = devC > 0 ? max(0, devC - 0.1) : min(0, devC + 0.1)
+            let pts = clamp(-over * 36, -16, 6)
+            score += pts
+            let sign: Readiness.Driver.Sign = pts > 1 ? .positive : (pts < -1 ? .negative : .neutral)
+            let arrow = devC >= 0 ? "+" : "−"
+            drivers.append(.init("Body temp \(arrow)\(String(format: "%.1f", abs(devC)))°C vs baseline",
+                                 sign, points: pts, magnitude: 16))
+        }
+
+        // Respiratory rate vs baseline — elevated breathing at rest = stress / illness signal.
+        // 0.5 br/min deadband for measurement noise; scored in absolute breaths since a rise
+        // of even 1–2 br/min over your norm is meaningful.
+        if let rr = i.respiratoryRate, let base = i.respiratoryRateBaseline, base > 0 {
+            signals += 1
+            let delta = rr - base
+            let over = delta > 0 ? max(0, delta - 0.5) : min(0, delta + 0.5)
+            let pts = clamp(-over * 6, -12, 6)
+            score += pts
+            let sign: Readiness.Driver.Sign = pts > 1 ? .positive : (pts < -1 ? .negative : .neutral)
+            drivers.append(.init(String(format: "Resp rate %.0f br/min", rr), sign, points: pts, magnitude: 12))
         }
 
         // Sleep vs a 7.5h target.

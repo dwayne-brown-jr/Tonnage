@@ -46,4 +46,53 @@ struct ReadinessDriverTests {
         #expect(r.band == .unknown)
         #expect(r.score == nil)
     }
+
+    // MARK: Ring-derived signals (body temperature + respiratory rate)
+
+    @Test("Elevated body temp is a negative driver that lowers the score")
+    func bodyTempElevated() {
+        let warm = ReadinessEngine.evaluate(.init(bodyTempC: 37.0, bodyTempBaselineC: 36.5))
+        let driver = warm.drivers.first { $0.label.hasPrefix("Body temp") }
+        #expect(driver != nil)
+        #expect(driver!.points < 0)
+        #expect(driver!.sign == .negative)
+        // Same inputs minus the temp signal → temp must have pulled the score down.
+        let neutral = ReadinessEngine.evaluate(.init(bodyTempC: 36.5, bodyTempBaselineC: 36.5))
+        #expect(warm.score! < neutral.score!)
+    }
+
+    @Test("Body temp within the 0.1°C deadband is neutral, not a penalty")
+    func bodyTempDeadband() {
+        let r = ReadinessEngine.evaluate(.init(bodyTempC: 36.55, bodyTempBaselineC: 36.5))
+        let driver = r.drivers.first { $0.label.hasPrefix("Body temp") }!
+        #expect(driver.points == 0)
+        #expect(driver.sign == .neutral)
+    }
+
+    @Test("Elevated respiratory rate is a negative driver")
+    func respiratoryElevated() {
+        let r = ReadinessEngine.evaluate(.init(respiratoryRate: 17, respiratoryRateBaseline: 14))
+        let driver = r.drivers.first { $0.label.hasPrefix("Resp rate") }!
+        #expect(driver.points < 0)
+        #expect(driver.sign == .negative)
+    }
+
+    @Test("Zero baselines exclude temp + respiratory but others still score")
+    func ringSignalsZeroBaselineExcluded() {
+        let r = ReadinessEngine.evaluate(.init(sleepHours: 8,
+                                               bodyTempC: 37, bodyTempBaselineC: 0,
+                                               respiratoryRate: 18, respiratoryRateBaseline: 0))
+        #expect(!r.drivers.contains { $0.label.hasPrefix("Body temp") })
+        #expect(!r.drivers.contains { $0.label.hasPrefix("Resp rate") })
+        #expect(r.score != nil)
+    }
+
+    @Test("A sick-day profile (fever + high breathing on top of poor autonomics) bands to drained")
+    func sickDayDrained() {
+        let r = ReadinessEngine.evaluate(.init(
+            hrvMs: 38, hrvBaselineMs: 62, restingHR: 66, restingHRBaseline: 56, sleepHours: 5,
+            bodyTempC: 37.3, bodyTempBaselineC: 36.5, respiratoryRate: 18, respiratoryRateBaseline: 14))
+        #expect(r.band == .drained)
+        #expect(r.holdsProgression == true)
+    }
 }

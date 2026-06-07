@@ -104,7 +104,7 @@ private struct ReadinessInfoPopover: View {
                 Text("Readiness")
                     .font(DSFont.title)
                     .foregroundStyle(Color.textPrimary)
-                Text("A 0–100 read of how recovered you are today — your HRV, resting heart rate, and sleep measured against your own baselines. It steers how hard to train, and isn't a medical score.")
+                Text("A 0–100 read of how recovered you are today — your HRV, resting heart rate, and sleep (plus body temperature and breathing rate if you wear a ring) measured against your own baselines. It steers how hard to train, and isn't a medical score.")
                     .font(DSFont.callout)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

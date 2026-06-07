@@ -59,7 +59,7 @@ struct RecoveryView: View {
                             // empty "needs Apple Watch data" trend cards for a Watch-less user.
                         } else if loaded {
                             trendCard("Readiness", series: readinessTrend, unit: "", fixedDomain: 0...100,
-                                      info: "Your daily recovery read — HRV, resting heart rate, and sleep scored 0–100 against your own baselines. The trend is plotted against your current baseline.")
+                                      info: "Your daily recovery read — HRV, resting heart rate, sleep, and (with a ring) body temperature and breathing rate, scored 0–100 against your own baselines. The trend is plotted against your current baseline.")
                             trendCard("HRV", series: series.hrv, unit: "ms",
                                       info: "Heart-rate variability — the beat-to-beat variation in your pulse. Higher vs your baseline usually means better recovery; a steady drift down can flag accumulating fatigue, illness, or stress.")
                             trendCard("Resting HR", series: series.restingHR, unit: "bpm",
@@ -67,6 +67,14 @@ struct RecoveryView: View {
                             trendCard("Sleep", series: series.sleepHours, unit: "h", decimals: 1,
                                       info: "Total time asleep, anchored to each wake-up day. Sleep is when you adapt to training — a consistent 7–9 hours supports recovery and performance.")
                             sleepStagesCard
+                            if !series.bodyTempC.isEmpty {
+                                trendCard("Body Temp", series: series.bodyTempC, unit: "°C", decimals: 1,
+                                          info: "Your overnight skin temperature (from a ring like Oura). Readiness watches the change vs your own baseline — a rise of a few tenths of a degree often shows up a day before illness or when you're not fully recovered.")
+                            }
+                            if !series.respiratoryRate.isEmpty {
+                                trendCard("Respiratory Rate", series: series.respiratoryRate, unit: "br/min",
+                                          info: "Breaths per minute while you sleep. Steady is good; an elevated rate vs your baseline is an early stress or illness signal that pulls readiness down.")
+                            }
                         } else {
                             ProgressView().tint(.accent).frame(maxWidth: .infinity, minHeight: 200)
                         }
@@ -379,12 +387,16 @@ struct RecoveryView: View {
         let hrv = Dictionary(series.hrv.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
         let rhr = Dictionary(series.restingHR.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
         let slp = Dictionary(series.sleepHours.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
+        let tmp = Dictionary(series.bodyTempC.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
+        let rsp = Dictionary(series.respiratoryRate.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
         let dates = Set(hrv.keys).union(rhr.keys).union(slp.keys).sorted()
         return dates.compactMap { d in
             let r = ReadinessEngine.evaluate(ReadinessInputs(
                 hrvMs: hrv[d], hrvBaselineMs: health.hrvBaseline,
                 restingHR: rhr[d], restingHRBaseline: health.restingHRBaseline,
-                sleepHours: slp[d]))
+                sleepHours: slp[d],
+                bodyTempC: tmp[d], bodyTempBaselineC: health.bodyTempBaselineC,
+                respiratoryRate: rsp[d], respiratoryRateBaseline: health.respiratoryRateBaseline))
             guard let s = r.score else { return nil }
             return DatedValue(date: d, value: Double(s))
         }

@@ -74,8 +74,24 @@ because it strips the iCloud entitlement — build signed for any CloudKit testi
 - [ ] Coach prompt-injection: wrap user free-text (name, notes, limitations) in delimited
       "untrusted data" sections.
 
+## Oura / ring integration
+- [x] **Readiness enrichment via Apple Health (DONE)** — added overnight **body-temperature
+      deviation** and **respiratory rate** as readiness drivers (a ring like Oura writes both to
+      Health). Score now: HRV, resting HR, sleep, body temp, respiratory rate, trained-yesterday —
+      each transparent. Re-auth schema bump (v2) re-prompts existing users for the new read types;
+      demo signals + two trend cards (Body Temp, Respiratory Rate) added; +5 tests (138 total).
+- [ ] **Apple Watch temperature** — Series 8+ writes `appleSleepingWristTemperature` (a *deviation*
+      type, baseline ~0), NOT `bodyTemperature`. To cover Watch users too, read that type and treat
+      its value as the deviation directly (skip the baseline subtraction). Ring users are covered now.
+- [ ] **Oura Cloud API (the "official" Readiness Score) — follow-up milestone.** Pull Oura's own
+      Daily Readiness score + contributors via their API. Needs: an Oura developer app, OAuth2 (or a
+      Personal Access Token per user), networking, secure token storage (Keychain), a "Connect Oura"
+      settings flow, and ongoing maintenance. Data leaves the device and the score is opaque (against
+      our explainable-score philosophy) — so present it as a *second opinion* alongside our transparent
+      read, not a replacement. Decide blend-vs-show-separately when picked up.
+
 ## P4 — Oura-style roadmap leftovers (not yet built)
-- [ ] Morning check-in + subjective tags (soreness/sleep-quality) → a 6th readiness signal.
+- [ ] Morning check-in + subjective tags (soreness/sleep-quality) → another readiness signal.
 - [ ] Strain vs. recovery balance (rolling training load charted against readiness).
 - [ ] Tag ↔ performance correlations ("you lift heavier on 7.5h+ sleep nights").
 

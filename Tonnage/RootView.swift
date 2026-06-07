@@ -68,6 +68,7 @@ struct RootView: View {
                 showCoachingUpdate = true   // existing user → one-time "what's new" intake
             }
             if health.hasRequested {
+                await health.upgradeAuthorizationIfNeeded()   // prompt once for newly-added read types (temp, respiratory)
                 await health.refresh()
                 await health.importExternalWorkouts(into: modelContext)
             }

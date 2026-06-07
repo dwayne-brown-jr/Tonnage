@@ -15,6 +15,8 @@ struct RecoverySeries: Sendable {
     var hrv: [DatedValue] = []
     var restingHR: [DatedValue] = []
     var sleepHours: [DatedValue] = []
+    var bodyTempC: [DatedValue] = []
+    var respiratoryRate: [DatedValue] = []
 }
 
 /// Last night's sleep broken into stages (hours). Deep drives physical recovery, REM
@@ -46,12 +48,25 @@ final class HealthKitManager {
     private(set) var latestHRV: Double?                      // SDNN, ms
     private(set) var hrvBaseline: Double?                    // ~14-day mean
     private(set) var lastNightSleepHours: Double?
+    private(set) var latestBodyTempC: Double?               // overnight skin/body temp, °C
+    private(set) var bodyTempBaselineC: Double?             // ~14-day mean
+    private(set) var latestRespiratoryRate: Double?         // breaths/min
+    private(set) var respiratoryRateBaseline: Double?       // ~14-day mean
     private(set) var trainedYesterday: Bool = false
 
     /// Whether the user has been through the auth prompt (HealthKit hides read status).
     var hasRequested: Bool {
         get { UserDefaults.standard.bool(forKey: "hk.requested") }
         set { UserDefaults.standard.set(newValue, forKey: "hk.requested") }
+    }
+
+    /// Bumped whenever new read types are added to `readTypes`. Lets us re-prompt users who
+    /// authorized an earlier set — HealthKit only surfaces a prompt for the *new* types, so a
+    /// re-request is silent for anyone already current.
+    private static let authSchemaVersion = 2
+    private var authedSchemaVersion: Int {
+        get { UserDefaults.standard.integer(forKey: "hk.authVersion") }
+        set { UserDefaults.standard.set(newValue, forKey: "hk.authVersion") }
     }
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
@@ -70,8 +85,10 @@ final class HealthKitManager {
     private let hrv = HKQuantityType(.heartRateVariabilitySDNN)
     private let activeEnergy = HKQuantityType(.activeEnergyBurned)
     private let sleep = HKCategoryType(.sleepAnalysis)
+    private let bodyTemp = HKQuantityType(.bodyTemperature)        // ring writes overnight skin temp here
+    private let respiratory = HKQuantityType(.respiratoryRate)
 
-    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, HKObjectType.workoutType()] }
+    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, bodyTemp, respiratory, HKObjectType.workoutType()] }
     private var shareTypes: Set<HKSampleType> { [HKQuantityType.workoutType(), bodyMass, activeEnergy] }
 
     // MARK: Authorization
@@ -81,10 +98,19 @@ final class HealthKitManager {
         do {
             try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
             hasRequested = true
+            authedSchemaVersion = Self.authSchemaVersion
             await refresh()
         } catch {
             // Leave data empty; UI shows the connect affordance.
         }
+    }
+
+    /// Re-request authorization for connected users when new read types ship (e.g. body
+    /// temperature + respiratory rate for ring-based readiness). No-op if never connected or
+    /// already current; HealthKit only prompts for the types not yet decided.
+    func upgradeAuthorizationIfNeeded() async {
+        guard isAvailable, hasRequested, authedSchemaVersion < Self.authSchemaVersion else { return }
+        await requestAuthorization()
     }
 
     func refresh() async {
@@ -93,6 +119,8 @@ final class HealthKitManager {
         await loadResting()
         await loadHRV()
         await loadSleep()
+        await loadBodyTemp()
+        await loadRespiratory()
         await loadTrainedYesterday()
     }
 
@@ -101,7 +129,9 @@ final class HealthKitManager {
         ReadinessEngine.evaluate(ReadinessInputs(
             hrvMs: latestHRV, hrvBaselineMs: hrvBaseline,
             restingHR: latestRestingHR, restingHRBaseline: restingHRBaseline,
-            sleepHours: lastNightSleepHours, trainedYesterday: trainedYesterday
+            sleepHours: lastNightSleepHours, trainedYesterday: trainedYesterday,
+            bodyTempC: latestBodyTempC, bodyTempBaselineC: bodyTempBaselineC,
+            respiratoryRate: latestRespiratoryRate, respiratoryRateBaseline: respiratoryRateBaseline
         ))
     }
 
@@ -140,6 +170,8 @@ final class HealthKitManager {
         latestHRV = nil; hrvBaseline = nil
         latestRestingHR = nil; restingHRBaseline = nil
         lastNightSleepHours = nil; trainedYesterday = false
+        latestBodyTempC = nil; bodyTempBaselineC = nil
+        latestRespiratoryRate = nil; respiratoryRateBaseline = nil
     }
 
     /// "Today" numbers that band to a clearly-recovered read (~primed/ready), plus a
@@ -148,6 +180,8 @@ final class HealthKitManager {
         latestHRV = 72;        hrvBaseline = 61
         latestRestingHR = 53;  restingHRBaseline = 57
         lastNightSleepHours = 7.8
+        latestBodyTempC = 36.4; bodyTempBaselineC = 36.5      // a touch below baseline → small credit
+        latestRespiratoryRate = 14.2; respiratoryRateBaseline = 14.6
         trainedYesterday = false
         if bodyweight.isEmpty { bodyweight = Self.demoBodyweight() }
     }
@@ -168,6 +202,7 @@ final class HealthKitManager {
         let cal = Calendar.current
         let today = cal.startOfDay(for: .now)
         var hrv: [DatedValue] = [], rhr: [DatedValue] = [], slp: [DatedValue] = []
+        var temp: [DatedValue] = [], resp: [DatedValue] = []
         for k in (0...days).reversed() {
             guard let d = cal.date(byAdding: .day, value: -k, to: today) else { continue }
             let t = Double(days - k)
@@ -175,8 +210,10 @@ final class HealthKitManager {
             rhr.append(.init(date: d, value: (56 - 1.5 * sin(t / 2.0) - t * 0.08).rounded()))
             let s = 7.1 + 0.7 * sin(t / 1.7 + 1)
             slp.append(.init(date: d, value: (s * 10).rounded() / 10))
+            temp.append(.init(date: d, value: ((36.5 + 0.12 * sin(t / 2.6)) * 10).rounded() / 10))
+            resp.append(.init(date: d, value: ((14.6 + 0.5 * sin(t / 2.1)) * 10).rounded() / 10))
         }
-        return RecoverySeries(hrv: hrv, restingHR: rhr, sleepHours: slp)
+        return RecoverySeries(hrv: hrv, restingHR: rhr, sleepHours: slp, bodyTempC: temp, respiratoryRate: resp)
     }
 #endif
 
@@ -246,6 +283,42 @@ final class HealthKitManager {
         hrvBaseline = baseline(of: samples, unit: unit)
     }
 
+    /// Overnight body/skin temperature (°C). A ring writes a value per night; we compare the
+    /// most-recent day to a ~14-day personal baseline, so the absolute offset (some sources log
+    /// 37 + deviation) doesn't matter — only the change vs your own norm drives readiness.
+    private func loadBodyTemp() async {
+        let start = Calendar.current.date(byAdding: .day, value: -14, to: .now)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: bodyTemp, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)],
+            limit: 60
+        )
+        guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else {
+            latestBodyTempC = nil; bodyTempBaselineC = nil; return
+        }
+        let unit = HKUnit.degreeCelsius()
+        latestBodyTempC = mostRecentDayAverage(samples, unit: unit)
+        bodyTempBaselineC = baseline(of: samples, unit: unit)
+    }
+
+    /// Overnight respiratory rate (breaths/min), most-recent day vs a ~14-day baseline.
+    private func loadRespiratory() async {
+        let start = Calendar.current.date(byAdding: .day, value: -14, to: .now)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: respiratory, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)],
+            limit: 200
+        )
+        guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else {
+            latestRespiratoryRate = nil; respiratoryRateBaseline = nil; return
+        }
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        latestRespiratoryRate = mostRecentDayAverage(samples, unit: unit)
+        respiratoryRateBaseline = baseline(of: samples, unit: unit)
+    }
+
     private func loadTrainedYesterday() async {
         // Yesterday ONLY (start-of-yesterday … start-of-today). The old 36h window caught
         // today's workout too, so logging today's session dropped today's readiness for
@@ -278,7 +351,9 @@ final class HealthKitManager {
         return RecoverySeries(
             hrv: await dailyAverage(of: hrv, unit: .secondUnit(with: .milli), predicate: predicate, cal: cal),
             restingHR: await dailyAverage(of: restingHR, unit: .count().unitDivided(by: .minute()), predicate: predicate, cal: cal),
-            sleepHours: await dailySleepHours(predicate: predicate, cal: cal)
+            sleepHours: await dailySleepHours(predicate: predicate, cal: cal),
+            bodyTempC: await dailyAverage(of: bodyTemp, unit: .degreeCelsius(), predicate: predicate, cal: cal),
+            respiratoryRate: await dailyAverage(of: respiratory, unit: .count().unitDivided(by: .minute()), predicate: predicate, cal: cal)
         )
     }
 

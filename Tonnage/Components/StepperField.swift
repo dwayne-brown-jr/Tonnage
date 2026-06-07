@@ -30,6 +30,17 @@ struct StepperField: View {
                 .strokeBorder(focused ? Color.accent : Color.hairline, lineWidth: focused ? 1.5 : DS.Stroke.hairline)
         )
         .animation(DS.snappySpring, value: focused)
+        // One VoiceOver "adjustable" element: swipe up/down to change by `step`.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(unit.isEmpty ? "Value" : unit)
+        .accessibilityValue("\(format(value)) \(unit)".trimmingCharacters(in: .whitespaces))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: adjust(step)
+            case .decrement: adjust(-step)
+            @unknown default: break
+            }
+        }
     }
 
     @ViewBuilder private var valueLabel: some View {

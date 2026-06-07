@@ -150,6 +150,19 @@ struct DataView: View {
             .frame(width: 38, height: 38)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).month().day()))
+        .accessibilityValue(dayStatusWord(status))
+    }
+
+    private func dayStatusWord(_ s: DayStatus) -> String {
+        switch s {
+        case .lift:       "Lift"
+        case .activeRest: "Active rest"
+        case .fullRest:   "Full rest"
+        case .cardio:     "Cardio"
+        case .empty:      "Nothing logged"
+        }
     }
 
     private func dayIcon(_ s: DayStatus) -> String {
@@ -453,6 +466,16 @@ struct DataView: View {
                 .foregroundStyle(color)
                 .frame(width: 26, alignment: .trailing)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(mv.label)
+        .accessibilityValue("\(mv.sets) sets, \(volumeStatus(mv.sets))")
+    }
+
+    /// VoiceOver wording for the bar's color-coded status.
+    private func volumeStatus(_ sets: Int) -> String {
+        if sets < Analytics.weeklySetsMEV { return "below the productive range" }
+        if sets <= Analytics.weeklySetsMAV { return "in the productive range" }
+        return "above the productive range"
     }
 
     /// Under the minimum effective volume → muted; in the 10–20 range → green; over → orange.

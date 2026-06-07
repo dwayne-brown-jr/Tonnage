@@ -15,6 +15,10 @@ struct RootView: View {
     @AppStorage("hasCompletedOnboarding") private var hasOnboarded = false
     @AppStorage("hasChosenSplit") private var hasChosenSplit = false
     @AppStorage("hasAnsweredCoachingIntake") private var hasAnsweredIntake = false
+    /// Set when a user goes through the NEW onboarding. Lets us resume an interrupted
+    /// first-run (finish profile/split) without dragging existing users — who predate the
+    /// split feature and never set this — into the split picker.
+    @AppStorage("didEnterFirstRunSetup") private var didEnterSetup = false
     @AppStorage("currentBlock") private var currentBlock = 1
     @State private var showOnboarding = false
     @State private var showProfile = false
@@ -42,7 +46,15 @@ struct RootView: View {
             if !hasOnboarded {
                 showOnboarding = true
             } else if !ProfileStore.isComplete {
-                showProfile = true   // onboarded before the profile existed → capture it now
+                // Resume the chain for a new user whose first-run was interrupted; existing
+                // users (didEnterSetup == false) just fill the profile, no chaining.
+                firstRunFlow = didEnterSetup
+                showProfile = true
+            } else if didEnterSetup && !hasChosenSplit {
+                // New user got through onboarding/profile but never picked a split (app was
+                // killed in the hand-off) — resume setup instead of stranding them.
+                firstRunFlow = true
+                showSplitPicker = true
             } else if !hasAnsweredIntake {
                 showCoachingUpdate = true   // existing user → one-time "what's new" intake
             }
@@ -57,6 +69,7 @@ struct RootView: View {
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView {
                 hasOnboarded = true
+                didEnterSetup = true   // mark this as a new-onboarding user so setup can resume
                 showOnboarding = false
                 firstRunFlow = true
                 if !ProfileStore.isComplete {

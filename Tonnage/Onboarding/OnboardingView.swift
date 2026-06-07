@@ -43,6 +43,23 @@ struct OnboardingView: View {
 
     private var topBar: some View {
         HStack {
+            // Back appears after page 1 (reserve the space before that so the title is stable).
+            if page > 0 {
+                Button {
+                    Haptics.impact(.light)
+                    withAnimation(DS.spring) { page -= 1 }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.surfaceElevated2))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+            } else {
+                Color.clear.frame(width: 32, height: 32)
+            }
             Text("TONNAGE")
                 .font(.system(.caption2, weight: .bold)).kerning(3)
                 .foregroundStyle(Color.accent)
@@ -51,11 +68,11 @@ struct OnboardingView: View {
                 Haptics.impact(.light)
                 onFinish()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
+                Text("Skip")
+                    .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.textSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color.surfaceElevated2))
+                    .padding(.horizontal, DS.Spacing.sm)
+                    .frame(height: 32)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Skip")
@@ -150,13 +167,13 @@ struct OnboardingView: View {
     private var splitPage: some View {
         scaffold(icon: "square.grid.2x2.fill", kicker: "Day to day", title: "Your split") {
             VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                bodyText("Pick the split that fits your week — Full Body, Upper/Lower, or Push/Pull/Legs. You choose the day; the exercises, sets, reps, and effort targets stay consistent so they're actually progressable.")
+                bodyText("You choose how your week is structured — Full Body, Upper/Lower, or Push/Pull/Legs. The exercises, sets, reps, and effort targets stay consistent so they're actually progressable. Here's the shape of one:")
                 VStack(spacing: DS.Spacing.sm) {
                     ForEach(split.sessionSpecs, id: \.name) { spec in
                         splitRow(spec.name.uppercased(), spec.focus)
                     }
                 }
-                bodyText("Set to \(split.label) (\(split.daysPerWeek) days/week) — change it anytime in Settings.")
+                bodyText("Currently \(split.label) (\(split.daysPerWeek) days/week) — set it anytime from Settings → Training Split.")
             }
         }
     }
@@ -284,12 +301,19 @@ struct OnboardingView: View {
             Label("Apple Health isn't available on this device", systemImage: "info.circle")
                 .font(DSFont.caption).foregroundStyle(Color.textTertiary)
         } else if health.hasRequested {
-            Label("Apple Health connected", systemImage: "checkmark.seal.fill")
-                .font(.system(.subheadline, weight: .bold))
-                .foregroundStyle(Color.success)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, DS.Spacing.md)
-                .background(Color.success.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            if health.hasRecoveryData {
+                Label("Apple Health connected", systemImage: "checkmark.seal.fill")
+                    .font(.system(.subheadline, weight: .bold))
+                    .foregroundStyle(Color.success)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, DS.Spacing.md)
+                    .background(Color.success.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            } else {
+                // HealthKit hides read-permission status, so don't claim a false "connected".
+                Label("Permissions requested. Readiness needs an Apple Watch — if scores stay blank, open Health → Sharing and allow Tonnage.", systemImage: "info.circle")
+                    .font(DSFont.caption).foregroundStyle(Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } else {
             Button(action: connectHealth) {
                 HStack(spacing: DS.Spacing.sm) {
@@ -317,6 +341,7 @@ struct OnboardingView: View {
         Haptics.impact(.light)
         Task {
             await health.requestAuthorization()
+            await health.refresh()   // populate so we can show an honest connected/no-data state
             connecting = false
             Haptics.success()
         }

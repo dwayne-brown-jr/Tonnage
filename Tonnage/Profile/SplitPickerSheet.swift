@@ -107,20 +107,34 @@ struct SplitPickerSheet: View {
         .buttonStyle(.plain)
     }
 
+    /// Warn when the chosen split needs more days than the athlete said they can train.
+    private var mismatchNote: String? {
+        guard daysPerWeek > 0, selected.daysPerWeek > daysPerWeek + 1 else { return nil }
+        return "\(selected.label) is \(selected.daysPerWeek) days/week — you said \(daysPerWeek). Make sure that fits your schedule."
+    }
+
     private var actionBar: some View {
-        Button {
-            if selected != current && hasData {
-                confirming = true
-            } else {
-                apply()
+        VStack(spacing: DS.Spacing.sm) {
+            if let note = mismatchNote {
+                Label(note, systemImage: "exclamationmark.triangle.fill")
+                    .font(DSFont.caption).foregroundStyle(Color.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        } label: {
-            Text(selected == current ? "Keep \(selected.label)" : "Use \(selected.label)")
-                .font(.system(.headline, weight: .bold)).foregroundStyle(Color.onAccent)
-                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
-                .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            Button {
+                if selected != current && hasData {
+                    confirming = true
+                } else {
+                    apply()
+                }
+            } label: {
+                Text(selected == current ? "Keep \(selected.label)" : "Use \(selected.label)")
+                    .font(.system(.headline, weight: .bold)).foregroundStyle(Color.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                    .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
         .padding(DS.Spacing.lg)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(Color.hairline).frame(height: DS.Stroke.hairline) }

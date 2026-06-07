@@ -137,7 +137,11 @@ struct RecoveryView: View {
                         .lineLimit(1).minimumScaleFactor(0.8)
                     Spacer(minLength: DS.Spacing.sm)
                     contributionBar(driver).frame(width: 84, height: 8)
+                        .accessibilityHidden(true)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(driver.label)
+                .accessibilityValue(signWord(driver.sign))
             }
         }
         .padding(DS.Spacing.lg)
@@ -317,6 +321,9 @@ struct RecoveryView: View {
             }
             if data.count >= 2 {
                 trendChart(data, fixedDomain: fixedDomain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(title) trend")
+                    .accessibilityValue(data.suffix(7).map { format($0.value, decimals: decimals) }.joined(separator: ", "))
             } else {
                 Text("Needs a few days of Apple Watch data to chart.")
                     .font(DSFont.caption).foregroundStyle(Color.textTertiary)
@@ -398,5 +405,8 @@ struct RecoveryView: View {
     }
     private func driverColor(_ s: Readiness.Driver.Sign) -> Color {
         switch s { case .positive: Color.success; case .negative: Color.accent; case .neutral: Color.textTertiary }
+    }
+    private func signWord(_ s: Readiness.Driver.Sign) -> String {
+        switch s { case .positive: "helping recovery"; case .negative: "hurting recovery"; case .neutral: "neutral" }
     }
 }

@@ -509,6 +509,9 @@ struct DataView: View {
             }
             .chartYAxis { volumeAxis }
             .frame(height: 180)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Weekly volume")
+            .accessibilityValue(volume.map { "Week \($0.week), \(Int($0.volume)) pounds" }.joined(separator: "; "))
         }
     }
 
@@ -565,6 +568,9 @@ struct DataView: View {
                 .chartXAxis { weekAxis }
                 .chartYAxis { weightAxis }
                 .frame(height: 180)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(selectedExercise ?? "Exercise") \(progressionMetric.rawValue) by week")
+                .accessibilityValue(series.map { "Week \($0.week), \(CoachEngine.fmt(metricValue($0).rounded()))" }.joined(separator: "; "))
             }
         }
     }
@@ -656,6 +662,9 @@ struct DataView: View {
         }
         .chartYAxis { weightAxis }
         .frame(height: 160)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Bodyweight trend")
+        .accessibilityValue(health.bodyweight.last.map { "Latest \(CoachEngine.fmt($0.pounds)) pounds" } ?? "No data")
     }
 
     private var logWeightButton: some View {

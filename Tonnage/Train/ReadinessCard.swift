@@ -57,7 +57,7 @@ struct ReadinessCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpen() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Readiness \(readiness.score.map(String.init) ?? "unavailable"), \(readiness.headline). \(readiness.trainingNote)")
+        .accessibilityLabel("Readiness \(readiness.score.map(String.init) ?? "unavailable"), \(readiness.headline). \(today ?? readiness.trainingNote)")
         .accessibilityHint("Opens recovery details")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }

@@ -4,18 +4,20 @@ Backlog of pro-app quality gates and deferred items, captured after the build-13
 (security proxy, audits, 133 tests). Ordered roughly by priority. Not yet started unless noted.
 
 ## P0 — App Store blockers / required before public release
-- [ ] **Privacy Manifest** (`PrivacyInfo.xcprivacy`) — Apple requires it. Declare required-reason
-      API usage (UserDefaults, file timestamps) + collected data types (health, photos, identifiers).
-      Not needed for TestFlight, required for App Store submission.
+- [x] **Privacy Manifest** (`PrivacyInfo.xcprivacy`) — DONE for the main app (no-tracking,
+      health/fitness/photos/name data types, UserDefaults CA92.1). Verified it bundles.
+- [ ] Add a `PrivacyInfo.xcprivacy` to the **Watch app + widget extensions** too (they read the
+      App Group UserDefaults) before App Store submission. Not needed for TestFlight.
 - [ ] **App Store metadata** — privacy nutrition labels (Health + Photos → third party/Anthropic),
       screenshots, age rating, support URL, description, keywords.
 - [ ] **Account deletion** — only if we add accounts (see Auth below); Apple mandates in-app deletion
       for account-based apps.
 
 ## P1 — Pro quality (high value)
-- [ ] **Accessibility pass** — only ~18 a11y modifiers app-wide. Add VoiceOver labels/traits/values
-      (steppers, cue chip, charts), non-color cues for the green/orange volume + contributor bars,
-      Dynamic Type checks at accessibility sizes, Reduce Motion.
+- [~] **Accessibility pass** — FIRST PASS DONE: StepperField is now a VoiceOver adjustable element;
+      per-muscle bars + Last 7 Days strip have labels/values (no longer color-only). REMAINING:
+      charts (Swift Charts accessibilityChartDescriptor), the readiness ring + contributor bars,
+      remaining icon-only buttons, Dynamic Type at accessibility sizes, Reduce Motion.
 - [ ] **Performance / Instruments** (device) — Time Profiler (chart/list scroll, launch), Leaks +
       Allocations (progress-photo image memory), Hangs, SwiftData fetches in view bodies.
 - [ ] **Thread Sanitizer run** (device/sim) — catch runtime data races, esp. the WatchConnectivity

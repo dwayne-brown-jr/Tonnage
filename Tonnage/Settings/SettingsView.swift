@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import CloudKit
 import TonnageCore
 
 /// SETTINGS: AI coach (key + model), Apple Health, rest-timer defaults, and data export/import.
@@ -21,6 +22,7 @@ struct SettingsView: View {
     @State private var keySet = Keychain.read(Keychain.apiKeyAccount) != nil
     @State private var keyError: String?
     @State private var feedbackNote: String?
+    @State private var iCloudAvailable: Bool?   // nil = still checking
     @State private var reminders = TrainingReminders()
 
     @State private var exportDoc: JSONBackupDocument?
@@ -52,6 +54,7 @@ struct SettingsView: View {
                         restTimerCard
                         remindersCard
                         howItWorksCard
+                        syncCard
                         dataCard
                         feedbackCard
 #if DEBUG
@@ -71,6 +74,10 @@ struct SettingsView: View {
         .onChange(of: isolationRest) { _, _ in PhoneConnectivity.shared.pushContext() }
         .task { await health.importExternalWorkouts(into: modelContext) }
         .task { await reminders.refreshAuthStatus() }
+        .task {
+            let status = try? await CKContainer(identifier: TonnageStore.cloudKitContainerID).accountStatus()
+            iCloudAvailable = (status == .available)
+        }
         .fileExporter(isPresented: $showExporter, document: exportDoc,
                       contentType: .json, defaultFilename: "tonnage-backup") { result in
             switch result {
@@ -103,6 +110,32 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Deletes every logged workout and activity (your program stays). This can't be undone — export a backup first if you might want it later.")
+        }
+    }
+
+    // MARK: iCloud sync status
+
+    private var syncCard: some View {
+        let on = iCloudAvailable == true
+        let checking = iCloudAvailable == nil
+        return card {
+            HStack(spacing: DS.Spacing.md) {
+                Image(systemName: on ? "checkmark.icloud.fill" : (checking ? "icloud" : "icloud.slash"))
+                    .font(.system(size: 20, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(on ? Color.success : Color.textTertiary)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(checking ? "Checking iCloud…" : (on ? "Synced via iCloud" : "iCloud is off"))
+                        .font(.system(.subheadline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+                    Text(on
+                         ? "Your workouts and progress back up and sync across your devices automatically."
+                         : "Your data is saved on this device. Turn on iCloud Drive in iOS Settings to back it up and sync across devices.")
+                        .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
         }
     }
 

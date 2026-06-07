@@ -29,8 +29,15 @@ Backlog of pro-app quality gates and deferred items, captured after the build-13
 - [ ] **Device matrix** — iPhone SE (small) → Pro Max, large Dynamic Type, the watch app + sync.
 
 ## P2 — Product / infra decisions
-- [ ] **kg / metric support** — app is lb-only (hardcoded in ~11 places, no toggle). Real limitation
-      for international users. Add a unit preference + conversion at display/entry.
+- [ ] **kg / metric support** — BIGGER than it looks; deliberately deferred to its own tested pass.
+      It's not just display formatting: a correct metric experience also needs the PROGRESSION
+      ENGINE's increment (CoachEngine adds +5 lb), the PLATE MATH (plate inventory), and the COACH's
+      "+5 lb" language to switch to kg/2.5-kg — i.e. it touches core logic + its tests, plus ~15
+      display/entry sites and converted entry steppers. High regression risk to the just-shipped
+      logging/progression flow, and low urgency for an all-US friends beta. Do as a focused milestone:
+      keep canonical storage in lb, add a WeightUnit preference + conversion at the UI boundary, make
+      the engine increment unit-aware, and add tests. NOT a half-display-only toggle (that would be
+      confusing — enter in lb, see kg).
 - [ ] **Telemetry / crash reporting** — none today (TestFlight/Xcode Organizer only). Add MetricKit
       (Apple-native, no SDK, no privacy-label cost) for production; Sentry if richer needed.
 - [~] **iOS unit-test target** — CREATED (`PersistenceIntegrationTests`, host = Tonnage app). TonnageCore

@@ -42,6 +42,13 @@
 			remoteGlobalIDString = 581C8FE62FC4CC2F0092E1E0;
 			remoteInfo = TonnageWidgetsExtension;
 		};
+		581C9AFC2FD5DD670092E1E0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1A00000000000000000000A1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1A0000000000000000000010;
+			remoteInfo = Tonnage;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -89,6 +96,7 @@
 		581C8FBB2FC4C8FC0092E1E0 /* TonnageWidgetsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TonnageWidgetsExtension.entitlements; sourceTree = "<group>"; };
 		581C8FE72FC4CC2F0092E1E0 /* TonnageWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TonnageWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		581C90042FC4CCD10092E1E0 /* TonnageWatchWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TonnageWatchWidgets.entitlements; sourceTree = "<group>"; };
+		581C9AF82FD5DD670092E1E0 /* PersistenceIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PersistenceIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -120,6 +128,7 @@
 		1A0000000000000000000028 /* Tonnage Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Tonnage Watch App"; sourceTree = "<group>"; };
 		581C8E262FC4C4C40092E1E0 /* TonnageWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (581C8E382FC4C4C50092E1E0 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = TonnageWidgets; sourceTree = "<group>"; };
 		581C8FEA2FC4CC2F0092E1E0 /* TonnageWatchWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (581C8FF92FC4CC2F0092E1E0 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = TonnageWatchWidgets; sourceTree = "<group>"; };
+		581C9AF92FD5DD670092E1E0 /* PersistenceIntegrationTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = PersistenceIntegrationTests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +168,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		581C9AF52FD5DD670092E1E0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -171,6 +187,7 @@
 				1A0000000000000000000028 /* Tonnage Watch App */,
 				581C8E262FC4C4C40092E1E0 /* TonnageWidgets */,
 				581C8FEA2FC4CC2F0092E1E0 /* TonnageWatchWidgets */,
+				581C9AF92FD5DD670092E1E0 /* PersistenceIntegrationTests */,
 				581C8E212FC4C4C40092E1E0 /* Frameworks */,
 				1A00000000000000000000A3 /* Products */,
 			);
@@ -183,6 +200,7 @@
 				1A0000000000000000000027 /* Tonnage Watch App.app */,
 				581C8E202FC4C4C40092E1E0 /* TonnageWidgetsExtension.appex */,
 				581C8FE72FC4CC2F0092E1E0 /* TonnageWatchWidgets.appex */,
+				581C9AF82FD5DD670092E1E0 /* PersistenceIntegrationTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -297,6 +315,29 @@
 			productReference = 581C8FE72FC4CC2F0092E1E0 /* TonnageWatchWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		581C9AF72FD5DD670092E1E0 /* PersistenceIntegrationTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 581C9AFE2FD5DD670092E1E0 /* Build configuration list for PBXNativeTarget "PersistenceIntegrationTests" */;
+			buildPhases = (
+				581C9AF42FD5DD670092E1E0 /* Sources */,
+				581C9AF52FD5DD670092E1E0 /* Frameworks */,
+				581C9AF62FD5DD670092E1E0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				581C9AFD2FD5DD670092E1E0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				581C9AF92FD5DD670092E1E0 /* PersistenceIntegrationTests */,
+			);
+			name = PersistenceIntegrationTests;
+			packageProductDependencies = (
+			);
+			productName = PersistenceIntegrationTests;
+			productReference = 581C9AF82FD5DD670092E1E0 /* PersistenceIntegrationTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -318,6 +359,10 @@
 					};
 					581C8FE62FC4CC2F0092E1E0 = {
 						CreatedOnToolsVersion = 26.1.1;
+					};
+					581C9AF72FD5DD670092E1E0 = {
+						CreatedOnToolsVersion = 26.1.1;
+						TestTargetID = 1A0000000000000000000010;
 					};
 				};
 			};
@@ -342,6 +387,7 @@
 				1A0000000000000000000020 /* Tonnage Watch App */,
 				581C8E1F2FC4C4C40092E1E0 /* TonnageWidgetsExtension */,
 				581C8FE62FC4CC2F0092E1E0 /* TonnageWatchWidgets */,
+				581C9AF72FD5DD670092E1E0 /* PersistenceIntegrationTests */,
 			);
 		};
 /* End PBXProject section */
@@ -369,6 +415,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		581C8FE52FC4CC2F0092E1E0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		581C9AF62FD5DD670092E1E0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -406,6 +459,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		581C9AF42FD5DD670092E1E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -423,6 +483,11 @@
 			isa = PBXTargetDependency;
 			target = 581C8FE62FC4CC2F0092E1E0 /* TonnageWatchWidgets */;
 			targetProxy = 581C8FF62FC4CC2F0092E1E0 /* PBXContainerItemProxy */;
+		};
+		581C9AFD2FD5DD670092E1E0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1A0000000000000000000010 /* Tonnage */;
+			targetProxy = 581C9AFC2FD5DD670092E1E0 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -881,6 +946,120 @@
 			};
 			name = Release;
 		};
+		581C9AFF2FD5DD670092E1E0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JZD8V9F4P6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dwayne.tonnage.watchkitapp.PersistenceIntegrationTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Tonnage.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Tonnage";
+			};
+			name = Debug;
+		};
+		581C9B002FD5DD670092E1E0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JZD8V9F4P6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dwayne.tonnage.watchkitapp.PersistenceIntegrationTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Tonnage.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Tonnage";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -925,6 +1104,15 @@
 			buildConfigurations = (
 				581C8FFB2FC4CC2F0092E1E0 /* Debug */,
 				581C8FFC2FC4CC2F0092E1E0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		581C9AFE2FD5DD670092E1E0 /* Build configuration list for PBXNativeTarget "PersistenceIntegrationTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				581C9AFF2FD5DD670092E1E0 /* Debug */,
+				581C9B002FD5DD670092E1E0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

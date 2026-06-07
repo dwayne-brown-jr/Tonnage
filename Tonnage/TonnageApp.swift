@@ -10,8 +10,13 @@ struct TonnageApp: App {
     init() {
         // SwiftUI's `App` is @MainActor-isolated, so building the seeded container
         // (which touches `mainContext`) is safe here.
-        container = TonnageStore.makeContainer(cloudKit: true)   // mirror to private iCloud
-        PhoneConnectivity.shared.activate(container: container)   // receive watch syncs
+        // Under XCTest, use a throwaway in-memory store: the test host runs on a fresh
+        // simulator clone with no iCloud, where CloudKit mirroring setup would trap.
+        let underTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        container = TonnageStore.makeContainer(inMemory: underTests, cloudKit: !underTests)
+        if !underTests {
+            PhoneConnectivity.shared.activate(container: container)   // receive watch syncs
+        }
     }
 
     var body: some Scene {

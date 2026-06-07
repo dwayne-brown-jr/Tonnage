@@ -12,7 +12,7 @@ DAILY_LIMIT = "30"
 # then paste the returned id below (and the preview_id if you use `wrangler dev`).
 [[kv_namespaces]]
 binding = "QUOTA"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "59500a74893248b6b8c31dd1a1fd1743"
 
 # NOTE: the Anthropic key is NOT here. Set it as a secret (never committed):
 #   wrangler secret put ANTHROPIC_API_KEY

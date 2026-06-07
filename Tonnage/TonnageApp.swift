@@ -16,6 +16,9 @@ struct TonnageApp: App {
         container = TonnageStore.makeContainer(inMemory: underTests, cloudKit: !underTests)
         if !underTests {
             PhoneConnectivity.shared.activate(container: container)   // receive watch syncs
+#if canImport(MetricKit)
+            MetricKitReporter.shared.start()                         // Apple-native crash/hang telemetry
+#endif
         }
     }
 

@@ -6,8 +6,10 @@ Backlog of pro-app quality gates and deferred items, captured after the build-13
 ## P0 — App Store blockers / required before public release
 - [x] **Privacy Manifest** (`PrivacyInfo.xcprivacy`) — DONE for the main app (no-tracking,
       health/fitness/photos/name data types, UserDefaults CA92.1). Verified it bundles.
-- [ ] Add a `PrivacyInfo.xcprivacy` to the **Watch app + widget extensions** too (they read the
-      App Group UserDefaults) before App Store submission. Not needed for TestFlight.
+- [~] Watch app + widget extension `PrivacyInfo.xcprivacy` files CREATED (in each target's folder,
+      declaring UserDefaults CA92.1). VERIFY in Xcode that each is included in its target's bundle
+      before App Store submission — they didn't auto-bundle in an incremental CLI build (synchronized
+      groups may need a re-sync / explicit membership for extension resources). Main-app one is confirmed.
 - [ ] **App Store metadata** — privacy nutrition labels (Health + Photos → third party/Anthropic),
       screenshots, age rating, support URL, description, keywords.
 - [ ] **Account deletion** — only if we add accounts (see Auth below); Apple mandates in-app deletion
@@ -46,8 +48,8 @@ stats), DATA (This Week, Adherence, PR Moments deduped, Sets-per-Muscle incl. "O
 and **Coach replied end-to-end through the proxy**. Proxy pen-test passed (405 + three 400s; quota
 header). Note: an *unsigned* (`CODE_SIGNING_ALLOWED=NO`) build crashes on launch in CloudKit setup
 because it strips the iCloud entitlement — build signed for any CloudKit testing.
-- [ ] Minor: Coach said "no workouts logged yet for this block" while DATA showed sets/PRs for the
-      week — check the recentWorkouts/currentWeek context passed to `CoachContext` vs the demo data.
+- Coach-context "no workouts" finding: RESOLVED as a false alarm — the reinstall (unsigned→signed)
+  wiped the demo container, so DATA was empty and the coach reported accurately. No defect.
 - [ ] **User authentication** — see decision below; scope depends on whether a backend/social is planned.
 
 ## P3 — Deferred polish / hardening (from the audits)

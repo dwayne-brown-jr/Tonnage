@@ -43,6 +43,15 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in restTimer.handleScenePhase(phase) }
         .task {
             SharedProfile.syncFromProfile()   // mirror starting point to Tonnage Fuel
+#if DEBUG
+            // UI-test hook: launch with `-uitesting` to bypass the first-run gates and seed
+            // demo data, so XCUITest smoke flows land on a populated TRAIN deterministically.
+            if ProcessInfo.processInfo.arguments.contains("-uitesting") {
+                hasOnboarded = true; hasChosenSplit = true; hasAnsweredIntake = true; didEnterSetup = true
+                DemoData.seedTrainingData(in: modelContext)
+                await health.setDemoRecovery(true)
+            }
+#endif
             if !hasOnboarded {
                 showOnboarding = true
             } else if !ProfileStore.isComplete {

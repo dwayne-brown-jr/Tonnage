@@ -17,6 +17,11 @@ final class CoachViewModel {
     @ObservationIgnored private var context: ModelContext?
 
     var hasKey: Bool { CoachKey.hasKey }
+    /// Shared-key daily allowance — surfaced in the UI so testers see it before hitting it.
+    var usingSharedKey: Bool { CoachKey.usingSharedKey }
+    var quotaRemaining: Int { SharedKeyQuota.remaining }
+    /// A turn failed if the transcript ends on a user message with no reply — offer a retry.
+    var canRetry: Bool { !isSending && messages.last?.role == .user }
 
     /// How many trailing messages of the transcript we actually send to the API. The full
     /// conversation is persisted for display, but re-sending all of it every turn would
@@ -50,6 +55,31 @@ final class CoachViewModel {
         isSending = true
         defer { isSending = false }
 
+        do {
+            let reply = try await AnthropicClient(apiKey: key)
+                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024)
+            append(CoachMessage(role: .assistant, text: reply))
+            SharedKeyQuota.recordUse()
+        } catch {
+            errorText = (error as? CoachError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Re-send the last user message after a failed turn, without duplicating its bubble
+    /// (the failed turn left it as the transcript tail).
+    func retryLast(system: String, model: CoachModel) async {
+        guard canRetry else { return }
+        guard let key = CoachKey.resolved else {
+            errorText = CoachError.missingKey.errorDescription
+            return
+        }
+        guard SharedKeyQuota.hasRemaining else {
+            errorText = SharedKeyQuota.limitMessage
+            return
+        }
+        errorText = nil
+        isSending = true
+        defer { isSending = false }
         do {
             let reply = try await AnthropicClient(apiKey: key)
                 .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024)

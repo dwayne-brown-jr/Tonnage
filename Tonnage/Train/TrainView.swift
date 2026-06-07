@@ -187,7 +187,22 @@ struct TrainView: View {
                     }
                 )
             }
+            // Surface the headline AI feature when the block is wrapping up, so it isn't
+            // hidden behind the block dropdown.
+            if dayType == .lift && week >= 5 { planNextBlockButton }
         }
+    }
+
+    private var planNextBlockButton: some View {
+        Button { showPlanBlock = true } label: {
+            Label("Plan Block \(String(format: "%02d", currentBlock + 1)) with Coach", systemImage: "brain.head.profile")
+                .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.accent)
+                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                    .strokeBorder(Color.accent.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Header (large title scrolls; compact bar pins + fades in)

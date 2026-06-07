@@ -15,6 +15,7 @@ struct ExerciseLogCard: View {
     @State private var showingDirections = false
     @State private var showingPlates = false
     @State private var formMode: ExerciseFormMode?
+    @State private var confirmRemove = false
     /// One-time "how logging works" hint, shown the first time an exercise is expanded.
     @AppStorage("tip.logging.seen") private var loggingTipSeen = false
 
@@ -49,11 +50,27 @@ struct ExerciseLogCard: View {
                                     coachNote: exercise.prescriptionNotes)
         }
         .sheet(isPresented: $showingPlates) {
-            PlateCalculatorSheet(initialTarget: initialPlateTarget)
+            PlateCalculatorSheet(initialTarget: initialPlateTarget, onApply: applyPlateWeight)
         }
         .sheet(item: $formMode) { mode in
             EditExerciseSheet(store: store, exercise: exercise, mode: mode)
         }
+        .confirmationDialog("Remove \(exercise.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { withAnimation(DS.spring) { store.removeExercise(exercise) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes this exercise and any sets you've logged for it this session.")
+        }
+    }
+
+    /// Apply a loadable weight from the Plate Calculator to this exercise's not-yet-logged
+    /// working sets, so the tool's result flows back into logging instead of being copied by hand.
+    private func applyPlateWeight(_ weight: Double) {
+        let targets = (exercise.sets ?? []).filter { !$0.isWarmup && !$0.completed }
+        let applyTo = targets.isEmpty ? (exercise.sets ?? []).filter { !$0.isWarmup } : targets
+        for s in applyTo { s.weight = weight }
+        store.save()
+        Haptics.success()
     }
 
     private var initialPlateTarget: Double {
@@ -106,9 +123,7 @@ struct ExerciseLogCard: View {
             Button { formMode = .edit } label: { Label("Edit Prescription", systemImage: "slider.horizontal.3") }
             Button { formMode = .swap } label: { Label("Swap Exercise", systemImage: "arrow.triangle.2.circlepath") }
             Divider()
-            Button(role: .destructive) {
-                withAnimation(DS.spring) { store.removeExercise(exercise) }
-            } label: { Label("Remove", systemImage: "trash") }
+            Button(role: .destructive) { confirmRemove = true } label: { Label("Remove", systemImage: "trash") }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 17, weight: .bold))

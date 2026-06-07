@@ -64,6 +64,7 @@ struct EditExerciseSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.lg) {
                         if mode != .edit { revertNote }
+                        if mode == .swap && hasLoggedSets { swapWarning }
                         if mode == .swap { swapSuggestions; coachSwapSection }
                         textField("Exercise", text: $name, placeholder: "e.g. Incline DB Press")
                         typeToggles
@@ -106,6 +107,16 @@ struct EditExerciseSheet: View {
         Label("Applies to Week \(week) only — reverts next week.", systemImage: "calendar.badge.clock")
             .font(.system(.caption, weight: .medium))
             .foregroundStyle(Color.textTertiary)
+    }
+
+    /// A swap rebuilds the slot's sets, so any logged work for it is lost — warn first.
+    private var hasLoggedSets: Bool { (exercise?.sets ?? []).contains { $0.completed && !$0.isWarmup } }
+
+    private var swapWarning: some View {
+        Label("Swapping clears the sets you've already logged for this slot.", systemImage: "exclamationmark.triangle.fill")
+            .font(.system(.caption, weight: .semibold))
+            .foregroundStyle(Color.danger)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// Names already in the current session — excluded from suggestions so they're

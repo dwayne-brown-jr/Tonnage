@@ -4,6 +4,8 @@ import TonnageCore
 /// Plate calculator: enter a target weight + bar, see what to load per side.
 struct PlateCalculatorSheet: View {
     let initialTarget: Double
+    /// Optional: write the achievable (loadable) weight back into the set being logged.
+    var onApply: ((Double) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var target: Double = 135
@@ -22,6 +24,7 @@ struct PlateCalculatorSheet: View {
                         inputs
                         plateVisual
                         breakdown
+                        if let onApply { applyButton(onApply) }
                     }
                     .padding(DS.Spacing.lg)
                 }
@@ -40,6 +43,19 @@ struct PlateCalculatorSheet: View {
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
         .onAppear { target = initialTarget }
+    }
+
+    private func applyButton(_ apply: @escaping (Double) -> Void) -> some View {
+        Button {
+            apply(loadout.achievable)
+            dismiss()
+        } label: {
+            Text("Use \(CoachEngine.fmt(loadout.achievable)) lb")
+                .font(.system(.headline, weight: .bold)).foregroundStyle(Color.onAccent)
+                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var inputs: some View {

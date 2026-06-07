@@ -8,6 +8,7 @@ import TonnageCore
 struct TrainView: View {
     @Environment(\.modelContext) private var context
     @Environment(HealthKitManager.self) private var health
+    @Environment(\.openURL) private var openURL
     @Query(sort: \Program.createdAt) private var programs: [Program]
     @Query private var allWorkouts: [LoggedWorkout]   // for the days-since-rest training streak
 
@@ -35,6 +36,7 @@ struct TrainView: View {
     @State private var showRecovery = false
     @State private var showPlanBlock = false
     @State private var showReplanBlock = false
+    @State private var confirmNewBlock = false
     @State private var shareItem: ShareImageItem?
 
     private var program: Program? { programs.first }
@@ -108,6 +110,13 @@ struct TrainView: View {
             PlanBlockSheet(currentBlockNumber: currentBlock, mode: .replanCurrent) { reload() }
         }
         .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+        .confirmationDialog("Start Block \(String(format: "%02d", currentBlock + 1))?",
+                            isPresented: $confirmNewBlock, titleVisibility: .visible) {
+            Button("Start Empty Block", role: .destructive) { startNewBlock() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Moves you to a fresh empty Block \(String(format: "%02d", currentBlock + 1)), Week 1. Your current block is kept — switch back anytime from the block menu.")
+        }
     }
 
     /// Share the session you just logged as a branded card.
@@ -245,7 +254,7 @@ struct TrainView: View {
             Button { showReplanBlock = true } label: {
                 Label("Re-plan This Block (Coach)", systemImage: "arrow.triangle.2.circlepath")
             }
-            Button { startNewBlock() } label: {
+            Button(role: .destructive) { confirmNewBlock = true } label: {
                 Label("Start Empty Block", systemImage: "plus.circle")
             }
         } label: {
@@ -289,9 +298,14 @@ struct TrainView: View {
             .buttonStyle(.plain)
             .disabled(sessionSaved)
             if saveFailed {
-                Text("Couldn't save — turn on Workouts for Tonnage in Health → Sharing.")
-                    .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
-                    .multilineTextAlignment(.center)
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                } label: {
+                    Text("Couldn't save. Allow Workouts for Tonnage in Settings → tap to open.")
+                        .font(.system(.caption2)).foregroundStyle(Color.accent)
+                        .multilineTextAlignment(.center)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -415,6 +429,8 @@ private struct RestDayView: View {
 
 private struct SessionNotesField: View {
     @Bindable var workout: LoggedWorkout
+    @Environment(\.modelContext) private var context
+    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.sm) {
@@ -424,12 +440,24 @@ private struct SessionNotesField: View {
                 .font(DSFont.body)
                 .foregroundStyle(Color.textPrimary)
                 .lineLimit(2...6)
+                .focused($focused)
                 .padding(DS.Spacing.md)
                 .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                        .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline)
+                        .strokeBorder(focused ? Color.accent : Color.hairline, lineWidth: focused ? 1.5 : DS.Stroke.hairline)
                 )
+                .toolbar {
+                    if focused {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") { focused = false }.fontWeight(.bold)
+                        }
+                    }
+                }
+        }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { try? context.save() }   // persist (+ visible exit) when editing ends
         }
     }
 }

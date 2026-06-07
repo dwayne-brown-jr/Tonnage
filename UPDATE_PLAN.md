@@ -31,8 +31,23 @@ Backlog of pro-app quality gates and deferred items, captured after the build-13
       for international users. Add a unit preference + conversion at display/entry.
 - [ ] **Telemetry / crash reporting** — none today (TestFlight/Xcode Organizer only). Add MetricKit
       (Apple-native, no SDK, no privacy-label cost) for production; Sentry if richer needed.
+- [ ] **iOS test host (prereq for the two below)** — the Tonnage scheme has NO test action, and
+      `swift test` runs on macOS where a SwiftData `ModelContainer` traps. Need to add (Xcode GUI):
+      an iOS **unit-test target** + a **UI-test target**, and enable them in the scheme's Test action.
+- [ ] **Integration/persistence tests** — WRITTEN (`PersistenceIntegrationTests.swift`, gated to iOS
+      via `#if canImport(UIKit)`): real container round-trips, cascade delete, backup + watch-payload
+      fidelity, re-import dedupe. They run once the iOS test host above exists.
 - [ ] **UI tests (XCUITest)** — 0 today vs 133 unit tests. A few critical-flow smoke tests
-      (log a set, send a coach message, plan a block) for CI confidence.
+      (log a set, send a coach message, plan a block) for CI confidence — needs the UI-test target.
+
+### Live run-through (done this pass)
+Booted the Simulator and exercised the signed build: launch OK, TRAIN (Today verdict/readiness/
+stats), DATA (This Week, Adherence, PR Moments deduped, Sets-per-Muscle incl. "Other" bucket),
+and **Coach replied end-to-end through the proxy**. Proxy pen-test passed (405 + three 400s; quota
+header). Note: an *unsigned* (`CODE_SIGNING_ALLOWED=NO`) build crashes on launch in CloudKit setup
+because it strips the iCloud entitlement — build signed for any CloudKit testing.
+- [ ] Minor: Coach said "no workouts logged yet for this block" while DATA showed sets/PRs for the
+      week — check the recentWorkouts/currentWeek context passed to `CoachContext` vs the demo data.
 - [ ] **User authentication** — see decision below; scope depends on whether a backend/social is planned.
 
 ## P3 — Deferred polish / hardening (from the audits)

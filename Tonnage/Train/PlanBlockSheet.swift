@@ -337,14 +337,8 @@ struct PlanBlockSheet: View {
     // MARK: Network
 
     private func loadPlan() async {
-        guard let key = CoachKey.resolved else {
+        guard let route = CoachKey.route else {
             phase = .error("Add your Anthropic API key in Settings to plan with Coach.")
-            return
-        }
-        // This is the priciest AI call (Opus, 4096 tokens) and often a tester's first one —
-        // honor the shared-key daily cap with the friendly message, not a raw 429 wall.
-        guard SharedKeyQuota.hasRemaining else {
-            phase = .error(SharedKeyQuota.limitMessage)
             return
         }
         phase = .loading
@@ -362,14 +356,13 @@ struct PlanBlockSheet: View {
             replanCurrent: targetsCurrentBlock
         )
         do {
-            let text = try await AnthropicClient(apiKey: key).send(
+            let text = try await AnthropicClient(route: route).send(
                 system: system,
                 history: [CoachMessage(role: .user, text: user)],
                 model: .opus,
                 maxTokens: 4096
             )
             if let plan = CoachBlockPlanner.parse(response: text) {
-                SharedKeyQuota.recordUse()   // count the block plan against the shared-key cap
                 phase = .preview(plan)
                 Haptics.selection()
             } else {

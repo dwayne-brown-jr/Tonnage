@@ -115,9 +115,7 @@ struct CoachView: View {
                     .font(DSFont.callout).foregroundStyle(Color.textSecondary).multilineTextAlignment(.center)
             }
             if vm.usingSharedKey {
-                Text(vm.quotaRemaining > 0
-                     ? "\(vm.quotaRemaining) free Coach messages left today · add your own key in Settings for unlimited"
-                     : "Out of free Coach messages today · add your own key in Settings for unlimited")
+                Text(sharedKeyNote)
                     .font(DSFont.caption).foregroundStyle(Color.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -191,6 +189,16 @@ struct CoachView: View {
         .padding(.vertical, DS.Spacing.md)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(Color.hairline).frame(height: DS.Stroke.hairline) }
+    }
+
+    /// Shared-key allowance line. The proxy reports the remaining count after the first
+    /// call; until then we just note that a daily limit applies.
+    private var sharedKeyNote: String {
+        let tail = " · add your own key in Settings for unlimited"
+        guard let n = vm.quotaRemaining else {
+            return "Free Coach messages are limited daily on the shared key" + tail
+        }
+        return (n > 0 ? "\(n) free Coach messages left today" : "Out of free Coach messages today") + tail
     }
 
     private var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !vm.isSending }

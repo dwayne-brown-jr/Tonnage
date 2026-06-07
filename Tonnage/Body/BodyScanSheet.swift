@@ -193,19 +193,15 @@ struct BodyScanSheet: View {
     // MARK: Network + commit
 
     private func analyze() async {
-        guard let key = CoachKey.resolved else {
+        guard let route = CoachKey.route else {
             phase = .error("Add your Anthropic API key in Settings to use photo estimates.")
-            return
-        }
-        guard SharedKeyQuota.hasRemaining else {
-            phase = .error(SharedKeyQuota.limitMessage)
             return
         }
         phase = .loading
         let system = BodyScanEstimator.systemPrompt(for: ProfileStore.current)
         let user = BodyScanEstimator.userPrompt(for: ProfileStore.current)
         do {
-            let text = try await AnthropicClient(apiKey: key).sendVision(
+            let text = try await AnthropicClient(route: route).sendVision(
                 system: system, userText: user,
                 jpegBase64: imageData.base64EncodedString(),
                 model: .opus, maxTokens: 1024
@@ -218,7 +214,6 @@ struct BodyScanSheet: View {
             values = Dictionary(result.estimates.map { ($0.type, $0.value) }, uniquingKeysWith: { a, _ in a })
             confidence = result.confidence
             note = result.note
-            SharedKeyQuota.recordUse()
             phase = .review
             Haptics.selection()
         } catch let error as CoachError {

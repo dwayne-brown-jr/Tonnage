@@ -199,11 +199,10 @@ struct EditExerciseSheet: View {
     }
 
     @MainActor private func askCoach() async {
-        guard let key = CoachKey.resolved else {
+        guard let route = CoachKey.route else {
             aiError = "Add your Anthropic API key in Settings to ask Coach."
             return
         }
-        guard SharedKeyQuota.hasRemaining else { aiError = SharedKeyQuota.limitMessage; return }
         aiError = nil
         aiLoading = true
         defer { aiLoading = false }
@@ -214,7 +213,7 @@ struct EditExerciseSheet: View {
         let system = CoachSwapSuggester.systemPrompt(for: ProfileStore.current)
         let user = CoachSwapSuggester.userPrompt(exerciseName: original, isCardio: isCardio, avoid: avoid)
         do {
-            let text = try await AnthropicClient(apiKey: key)
+            let text = try await AnthropicClient(route: route)
                 .send(system: system, history: [CoachMessage(role: .user, text: user)],
                       model: .haiku, maxTokens: 300)
             let names = CoachSwapSuggester.parse(text)
@@ -222,7 +221,6 @@ struct EditExerciseSheet: View {
                 aiError = "Coach didn't return usable suggestions — try again."
             } else {
                 aiSwaps = names
-                SharedKeyQuota.recordUse()
                 Haptics.selection()
             }
         } catch let error as CoachError {

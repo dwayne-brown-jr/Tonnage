@@ -1,0 +1,13 @@
+{
+  "name": "tonnage-coach-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal Cloudflare Worker that proxies Anthropic Messages API calls for Tonnage, holding the shared key server-side.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

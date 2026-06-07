@@ -20,6 +20,7 @@ struct BodyView: View {
     @State private var viewerPhoto: ProgressPhoto?
     @State private var scanPickerItem: PhotosPickerItem?
     @State private var scanImage: ScanImage?
+    @State private var errorMessage: String?
 
     private var latest: [BodyMetrics.Latest] { BodyMetrics.latest(measurements) }
     private var tracked: [MeasurementType] { BodyMetrics.trackedTypes(in: measurements) }
@@ -72,6 +73,10 @@ struct BodyView: View {
         }
         .onChange(of: pickerItem) { _, item in importPickedPhoto(item) }
         .onChange(of: scanPickerItem) { _, item in loadScanImage(item) }
+        .alert("Couldn't add photo", isPresented: Binding(get: { errorMessage != nil },
+                                                          set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(errorMessage ?? "") }
         .onAppear { syncSelection() }
         .onChange(of: tracked) { _, _ in syncSelection() }
     }
@@ -110,7 +115,9 @@ struct BodyView: View {
         Task {
             defer { scanPickerItem = nil }
             guard let raw = try? await item.loadTransferable(type: Data.self),
-                  let encoded = ProgressPhotoStore.encode(raw) else { return }
+                  let encoded = ProgressPhotoStore.encode(raw) else {
+                errorMessage = "Couldn't read that photo — try another."; Haptics.warning(); return
+            }
             scanImage = ScanImage(data: encoded)
         }
     }
@@ -122,14 +129,16 @@ struct BodyView: View {
         Task {
             defer { pickerItem = nil }
             guard let raw = try? await item.loadTransferable(type: Data.self),
-                  let encoded = ProgressPhotoStore.encode(raw) else { return }
+                  let encoded = ProgressPhotoStore.encode(raw) else {
+                errorMessage = "Couldn't read that photo — try another."; Haptics.warning(); return
+            }
             let photo: ProgressPhoto
             if iCloudSync {
                 photo = ProgressPhoto(date: .now, syncedData: encoded)
             } else if let filename = ProgressPhotoStore.writeLocal(encoded) {
                 photo = ProgressPhoto(date: .now, localFilename: filename)
             } else {
-                return
+                errorMessage = "Couldn't save the photo to this device."; Haptics.warning(); return
             }
             context.insert(photo)
             try? context.save()

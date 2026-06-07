@@ -19,6 +19,8 @@ struct SettingsView: View {
     @State private var connecting = false
     @State private var apiKeyInput = ""
     @State private var keySet = Keychain.read(Keychain.apiKeyAccount) != nil
+    @State private var keyError: String?
+    @State private var feedbackNote: String?
     @State private var reminders = TrainingReminders()
 
     @State private var exportDoc: JSONBackupDocument?
@@ -70,7 +72,12 @@ struct SettingsView: View {
         .task { await health.importExternalWorkouts(into: modelContext) }
         .task { await reminders.refreshAuthStatus() }
         .fileExporter(isPresented: $showExporter, document: exportDoc,
-                      contentType: .json, defaultFilename: "tonnage-backup") { _ in }
+                      contentType: .json, defaultFilename: "tonnage-backup") { result in
+            switch result {
+            case .success: importMessage = "Backup saved."; Haptics.success()
+            case .failure: importMessage = "Backup wasn't saved."
+            }
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
             handleImport(result)
         }
@@ -95,7 +102,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Deletes every logged workout and activity. Your Block 01 program stays. This can't be undone.")
+            Text("Deletes every logged workout and activity (your program stays). This can't be undone — export a backup first if you might want it later.")
         }
     }
 
@@ -117,6 +124,9 @@ struct SettingsView: View {
                     if let data = try? backup.encoded() {
                         exportDoc = JSONBackupDocument(data: data)
                         showExporter = true
+                    } else {
+                        importMessage = "Couldn't prepare the backup."
+                        Haptics.warning()
                     }
                 }
                 dataButton("Import", systemImage: "square.and.arrow.down") { showImporter = true }
@@ -199,9 +209,17 @@ struct SettingsView: View {
 
             HStack(spacing: DS.Spacing.sm) {
                 Button {
-                    Keychain.save(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines), for: Keychain.apiKeyAccount)
+                    let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Don't store an obviously-wrong key behind a green "Key Set".
+                    guard key.hasPrefix("sk-ant-") else {
+                        withAnimation(DS.spring) { keyError = "That doesn't look like an Anthropic key — they start with \"sk-ant-\"." }
+                        Haptics.warning()
+                        return
+                    }
+                    Keychain.save(key, for: Keychain.apiKeyAccount)
                     apiKeyInput = ""
                     keySet = true
+                    keyError = nil
                     Haptics.success()
                 } label: {
                     Text("Save Key").font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
@@ -226,6 +244,9 @@ struct SettingsView: View {
                 }
             }
 
+            if let keyError {
+                Text(keyError).font(.system(.caption2)).foregroundStyle(Color.danger)
+            }
             Text("Stored in the Keychain on this device only — never in plain settings.")
                 .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
         }
@@ -369,11 +390,19 @@ struct SettingsView: View {
                 }
                 Text("Days").dsLabel()
                 weekdayPicker
+                Label("Set for \(reminderClock) on your selected days.", systemImage: "checkmark.circle.fill")
+                    .font(.system(.caption2)).foregroundStyle(Color.success)
             }
 
             Text("A nudge on your training days so you don't break the chain.")
                 .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
         }
+    }
+
+    private var reminderClock: String {
+        let d = Calendar.current.date(from: DateComponents(hour: reminders.hour, minute: reminders.minute)) ?? Date()
+        let f = DateFormatter(); f.timeStyle = .short
+        return f.string(from: d)
     }
 
     /// Bridges the manager's hour/minute to a `Date` the system DatePicker can edit.
@@ -546,8 +575,12 @@ struct SettingsView: View {
             Button {
                 if MailComposeView.canSend {
                     showMail = true
-                } else if let url = Feedback.mailtoURL {
+                } else if let url = Feedback.mailtoURL, UIApplication.shared.canOpenURL(url) {
                     openURL(url)
+                } else {
+                    // No Mail app / handler — don't no-op; copy the address so they can reach me.
+                    UIPasteboard.general.string = Feedback.recipient
+                    withAnimation(DS.spring) { feedbackNote = "No mail app set up — copied \(Feedback.recipient) to your clipboard." }
                 }
                 Haptics.selection()
             } label: {
@@ -557,6 +590,9 @@ struct SettingsView: View {
                     .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            if let feedbackNote {
+                Text(feedbackNote).font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+            }
         }
     }
 

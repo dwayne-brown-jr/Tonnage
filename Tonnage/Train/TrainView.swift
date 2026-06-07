@@ -314,9 +314,9 @@ struct TrainView: View {
             .disabled(sessionSaved)
             if saveFailed {
                 Button {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    if let url = URL(string: "x-apple-health://") { openURL(url) }
                 } label: {
-                    Text("Couldn't save. Allow Workouts for Tonnage in Settings → tap to open.")
+                    Text("Couldn't save. Allow Workouts in Health → Sharing → Tonnage — tap to open Health.")
                         .font(.system(.caption2)).foregroundStyle(Color.accent)
                         .multilineTextAlignment(.center)
                 }

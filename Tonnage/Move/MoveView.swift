@@ -11,6 +11,7 @@ struct MoveView: View {
     @State private var entryKind: ActivityKind?
     @State private var importing = false
     @State private var importMessage: String?
+    @State private var pendingDelete: Activity?
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     private let quickKinds: [ActivityKind] = [
@@ -35,6 +36,15 @@ struct MoveView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $entryKind) { kind in
                 ActivityEntrySheet(kind: kind)
+            }
+            .confirmationDialog("Delete this activity?",
+                                isPresented: Binding(get: { pendingDelete != nil },
+                                                     set: { if !$0 { pendingDelete = nil } }),
+                                presenting: pendingDelete) { activity in
+                Button("Delete", role: .destructive) {
+                    context.delete(activity); try? context.save(); Haptics.warning()
+                }
+                Button("Cancel", role: .cancel) {}
             }
         }
         .tint(.accent)
@@ -88,7 +98,7 @@ struct MoveView: View {
                     let n = await health.importExternalWorkouts(into: context)
                     importMessage = n > 0
                         ? "Imported \(n) workout\(n == 1 ? "" : "s") from Apple Health."
-                        : "No new workouts to import."
+                        : "No new cardio found in Apple Health."
                     importing = false
                     Haptics.success()
                 }
@@ -135,8 +145,7 @@ struct MoveView: View {
                     ActivityRow(activity: activity)
                         .contextMenu {
                             Button(role: .destructive) {
-                                context.delete(activity)
-                                try? context.save()
+                                pendingDelete = activity
                             } label: { Label("Delete", systemImage: "trash") }
                         }
                 }

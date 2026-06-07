@@ -9,6 +9,7 @@ import TonnageCore
 struct RecoveryView: View {
     @Environment(HealthKitManager.self) private var health
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Query(sort: \LoggedWorkout.weekNumber) private var workouts: [LoggedWorkout]
     @AppStorage("currentBlock") private var currentBlock = 1
     @AppStorage("train.week") private var trainWeek = 1
@@ -46,7 +47,11 @@ struct RecoveryView: View {
                 ScrollView {
                     VStack(spacing: DS.Spacing.lg) {
                         header
-                        if !health.hasRequested && readiness.band == .unknown { connectCard }
+                        if !health.hasRequested && readiness.band == .unknown {
+                            connectCard
+                        } else if loaded && !health.hasRecoveryData {
+                            noDataCard   // connected, but nothing came back (no Watch / reads denied)
+                        }
                         if !readiness.drivers.isEmpty { driversCard }
                         if loaded && !insights.isEmpty { insightsCard }
                         if loaded {
@@ -220,6 +225,26 @@ struct RecoveryView: View {
             }
             .buttonStyle(.plain)
             .disabled(connecting)
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
+
+    private var noDataCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            Label("No recovery data yet", systemImage: "applewatch.slash")
+                .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+            Text("Readiness needs an Apple Watch — it reads HRV, resting heart rate, and sleep. If you have one, open the Health app → Sharing → Apps → Tonnage and allow those.")
+                .font(DSFont.callout).foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                if let url = URL(string: "x-apple-health://") { openURL(url) }
+            } label: {
+                Label("Open Health", systemImage: "heart.fill")
+                    .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.accent)
+            }
+            .buttonStyle(.plain)
         }
         .padding(DS.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)

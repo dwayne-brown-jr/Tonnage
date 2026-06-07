@@ -68,11 +68,19 @@ public func makeBackup(workouts: [LoggedWorkout], activities: [Activity]) -> Bac
     )
 }
 
-/// Restores a backup: workouts replace any existing (week, session); activities are appended.
+/// Restores a backup: workouts replace any existing (week, session); activities are added
+/// but de-duped (same kind + minute) so re-importing the same backup doesn't double them.
 @MainActor
 public func applyBackup(_ backup: BackupData, to context: ModelContext) {
     for workout in backup.workouts { applyWorkoutPayload(workout, to: context) }
-    for a in backup.activities {
+
+    let existing = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
+    let cal = Calendar.current
+    func isDuplicate(_ a: ActivityPayload) -> Bool {
+        existing.contains { $0.kind == a.kind && $0.name == a.name
+            && cal.isDate($0.date, equalTo: a.date, toGranularity: .minute) }
+    }
+    for a in backup.activities where !isDuplicate(a) {
         context.insert(Activity(name: a.name, kind: a.kind, durationMinutes: a.durationMinutes,
                                 distanceMiles: a.distanceMiles, flights: a.flights, detail: a.detail, date: a.date))
     }

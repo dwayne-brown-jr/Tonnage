@@ -49,7 +49,9 @@ struct SetRow: View {
         case .reps:
             StepperField(value: doubleBinding(\.reps), step: 1, range: 0...100, unit: "reps")
         case .rpe:
-            RPEChip(rpe: $set.rpe)
+            // Nudge: a completed working set with no reps-left logged loses the data the
+            // progression engine runs on — outline the chip so it's clearly worth a tap.
+            RPEChip(rpe: $set.rpe, needsAttention: set.completed && set.rpe == nil && !set.isWarmup)
         case .time:
             TimeStepperField(seconds: intOptionalBinding(\.durationSeconds))
         case .distance:
@@ -109,6 +111,7 @@ private struct CompleteButton: View {
 /// but the user only ever sees reps left.
 private struct RPEChip: View {
     @Binding var rpe: Double?
+    var needsAttention: Bool = false
 
     /// Whole reps-left choices, each mapped to the RPE the engine/store uses.
     private let options: [(label: String, rpe: Double?)] = [
@@ -144,6 +147,12 @@ private struct RPEChip: View {
             .frame(width: 44)
             .padding(.vertical, DS.Spacing.sm)
             .background(Color.surfaceElevated2, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .overlay {
+                if needsAttention {
+                    RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                        .strokeBorder(Color.accent.opacity(0.6), lineWidth: 1.5)
+                }
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Reps left in reserve")

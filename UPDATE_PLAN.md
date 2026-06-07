@@ -56,14 +56,16 @@ Backlog of pro-app quality gates and deferred items, captured after the build-13
 
 ---
 
-## Decision needed: User authentication
+## Decision: User authentication — DEFERRED (not needed yet)
 The app is **local-first**: data lives in SwiftData mirrored to the user's **CloudKit private
 database** — so the user's iCloud account already provides identity + cross-device sync with no
-login. Before building sign-in, decide what it must accomplish (this changes the work from a
-~1-hour Settings addition to a multi-week backend project):
+login. Decided to **defer** sign-in: with no backend, social features, Android app, or paid tier,
+an account would be pure cost (friction + App Store account-deletion + "must offer Apple if Google"
++ maintenance) for no user benefit.
 
-- **Sync / "don't lose my data"** → already handled by iCloud/CloudKit. A login adds nothing here.
-- **Social features (friends, shared feed, cross-platform/Android)** → needs a backend + accounts.
-  Sign in with Apple is the front door; this is the big project.
-- **Stable identity for the Coach proxy** (quota survives reinstall) → lightweight Sign in with Apple.
-- App Store rule 4.8: if we offer Google/Facebook login, we **must** also offer Sign in with Apple.
+**Revisit when** any of these land: a backend for social (friends/feeds), an Android app
+(CloudKit is Apple-only), or server-side per-user entitlements. **Sign in with Apple** is the
+front door at that point (not Google-first; rule 4.8).
+
+In the meantime, if reassurance about data safety is wanted: add a small **iCloud sync-status
+row in Settings** (synced ✓ / iCloud off) — no accounts needed.

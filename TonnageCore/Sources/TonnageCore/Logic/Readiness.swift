@@ -94,7 +94,9 @@ public enum ReadinessEngine {
             signals += 1
             let pts = clamp((sleep - 7.5) * 6, -18, 10)
             score += pts
-            let sign: Readiness.Driver.Sign = sleep >= 7.25 ? .positive : (sleep < 6.5 ? .negative : .neutral)
+            // Sign must track the points it adds, or a "green" driver that actually subtracts
+            // (e.g. 7.3h) misleads the contribution bar. Small deadband around the 7.5h target.
+            let sign: Readiness.Driver.Sign = pts > 1 ? .positive : (pts < -1 ? .negative : .neutral)
             drivers.append(.init(String(format: "Slept %.1fh", sleep), sign, points: pts, magnitude: 18))
         }
 

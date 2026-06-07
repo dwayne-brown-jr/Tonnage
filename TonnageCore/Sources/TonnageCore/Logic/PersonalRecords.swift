@@ -47,23 +47,29 @@ public enum PersonalRecords {
 
         for w in chronological {
             for ex in w.orderedExercises where !ex.isCardio {
+                // Best eligible set in THIS session — so a session with several beating sets
+                // fires ONE PR (not one per set, which also collided on `id`).
+                var bestSet: LoggedSet?
+                var bestE = 0.0
                 for set in ex.orderedSets where set.completed && !set.isWarmup {
                     // Skip high-rep sets — Epley over-estimates there and would mint fake PRs.
                     guard set.weight > 0, set.reps > 0, set.reps <= maxRepsForReliableE1RM else { continue }
                     let e = epley(weight: set.weight, reps: set.reps)
-                    let prev = bestByExercise[ex.name] ?? 0
-                    if prev > 0, e > prev {
-                        prs.append(PRMoment(
-                            exerciseName: ex.name,
-                            weight: set.weight, reps: set.reps,
-                            estimatedOneRM: e,
-                            date: w.date,
-                            weekNumber: w.weekNumber, blockNumber: w.blockNumber,
-                            isCompound: ex.isCompound
-                        ))
-                    }
-                    if e > prev { bestByExercise[ex.name] = e }
+                    if e > bestE { bestE = e; bestSet = set }
                 }
+                guard let bestSet, bestE > 0 else { continue }
+                let prev = bestByExercise[ex.name] ?? 0
+                if prev > 0, bestE > prev {
+                    prs.append(PRMoment(
+                        exerciseName: ex.name,
+                        weight: bestSet.weight, reps: bestSet.reps,
+                        estimatedOneRM: bestE,
+                        date: w.date,
+                        weekNumber: w.weekNumber, blockNumber: w.blockNumber,
+                        isCompound: ex.isCompound
+                    ))
+                }
+                if bestE > prev { bestByExercise[ex.name] = bestE }
             }
         }
         return Array(prs.sorted { $0.date > $1.date }.prefix(limit))

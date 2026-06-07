@@ -100,14 +100,19 @@ public enum Analytics {
     }
 
     /// Top-set (heaviest completed set) per week for one exercise, ascending by week.
+    /// Aggregates to ONE point per week (the heaviest by e1RM) so a week logged twice
+    /// can't emit duplicate points with colliding chart IDs.
     public static func topSetSeries(for name: String, in workouts: [LoggedWorkout]) -> [TopSetPoint] {
-        workouts
-            .sorted { $0.weekNumber < $1.weekNumber }
-            .compactMap { workout in
-                guard let exercise = workout.exercises?.first(where: { $0.name == name }),
-                      let top = exercise.topSet else { return nil }
-                return TopSetPoint(week: workout.weekNumber, weight: top.weight, reps: top.reps)
-            }
+        var bestByWeek: [Int: TopSetPoint] = [:]
+        for workout in workouts {
+            guard let exercise = workout.exercises?.first(where: { $0.name == name }),
+                  let top = exercise.topSet else { continue }
+            let point = TopSetPoint(week: workout.weekNumber, weight: top.weight, reps: top.reps)
+            if let existing = bestByWeek[workout.weekNumber],
+               existing.estimatedOneRepMax >= point.estimatedOneRepMax { continue }
+            bestByWeek[workout.weekNumber] = point
+        }
+        return bestByWeek.values.sorted { $0.week < $1.week }
     }
 
     // Block summary.

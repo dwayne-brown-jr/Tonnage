@@ -100,5 +100,10 @@ public func applyWorkoutPayload(_ payload: WorkoutPayload, to context: ModelCont
         return exercise
     }
     context.insert(workout)
-    try? context.save()
+    do {
+        try context.save()
+    } catch {
+        // Don't leave the delete half-applied (the old record gone, the new one unsaved).
+        context.rollback()
+    }
 }

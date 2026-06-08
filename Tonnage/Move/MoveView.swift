@@ -12,6 +12,7 @@ struct MoveView: View {
     @State private var importing = false
     @State private var importMessage: String?
     @State private var pendingDelete: Activity?
+    @State private var selectedActivity: Activity?
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     private let quickKinds: [ActivityKind] = [
@@ -36,6 +37,9 @@ struct MoveView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $entryKind) { kind in
                 ActivityEntrySheet(kind: kind)
+            }
+            .sheet(item: $selectedActivity) { activity in
+                ActivityDetailSheet(activity: activity)
             }
             .confirmationDialog("Delete this activity?",
                                 isPresented: Binding(get: { pendingDelete != nil },
@@ -143,6 +147,14 @@ struct MoveView: View {
             } else {
                 ForEach(activities) { activity in
                     ActivityRow(activity: activity)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            Haptics.selection()
+                            selectedActivity = activity
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Opens activity details")
                         .contextMenu {
                             Button(role: .destructive) {
                                 pendingDelete = activity
@@ -177,6 +189,9 @@ private struct ActivityRow: View {
                 .font(DSFont.numberSm)
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.trailing)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.textTertiary)
         }
         .padding(DS.Spacing.md)
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))

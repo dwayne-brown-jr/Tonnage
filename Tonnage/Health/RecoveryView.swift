@@ -69,10 +69,12 @@ struct RecoveryView: View {
                             sleepStagesCard
                             if !series.bodyTempC.isEmpty {
                                 trendCard("Body Temp", series: series.bodyTempC, unit: "°C", decimals: 1,
+                                          fixedDomain: tightDomain(series.bodyTempC, minPad: 0.3),
                                           info: "Your overnight skin temperature (from a ring like Oura). Readiness watches the change vs your own baseline — a rise of a few tenths of a degree often shows up a day before illness or when you're not fully recovered.")
                             }
                             if !series.respiratoryRate.isEmpty {
                                 trendCard("Respiratory Rate", series: series.respiratoryRate, unit: "br/min",
+                                          fixedDomain: tightDomain(series.respiratoryRate, minPad: 1),
                                           info: "Breaths per minute while you sleep. Steady is good; an elevated rate vs your baseline is an early stress or illness signal that pulls readiness down.")
                             }
                         } else {
@@ -379,6 +381,16 @@ struct RecoveryView: View {
     }
 
     private func format(_ v: Double, decimals: Int) -> String { String(format: "%.\(decimals)f", v) }
+
+    /// A snug y-domain for near-constant metrics (body temp, breathing). Without it the
+    /// AreaMark's fill-to-zero forces a 0-based axis, pinning the line to the top and hiding
+    /// the small-but-meaningful deviations readiness actually scores. Pads the data range.
+    private func tightDomain(_ data: [DatedValue], minPad: Double) -> ClosedRange<Double>? {
+        let v = data.map(\.value)
+        guard let lo = v.min(), let hi = v.max() else { return nil }
+        let pad = max((hi - lo) * 0.4, minPad)
+        return (lo - pad)...(hi + pad)
+    }
 
     // MARK: Derived
 

@@ -8,13 +8,16 @@ public struct ActivityPayload: Codable, Sendable, Equatable {
     public var durationMinutes: Int
     public var distanceMiles: Double?
     public var flights: Int?
+    public var activeCalories: Int?
     public var detail: String
     public var date: Date
 
     public init(name: String, kind: ActivityKind, durationMinutes: Int,
-                distanceMiles: Double?, flights: Int?, detail: String, date: Date) {
+                distanceMiles: Double?, flights: Int?, activeCalories: Int? = nil,
+                detail: String, date: Date) {
         self.name = name; self.kind = kind; self.durationMinutes = durationMinutes
-        self.distanceMiles = distanceMiles; self.flights = flights; self.detail = detail; self.date = date
+        self.distanceMiles = distanceMiles; self.flights = flights; self.activeCalories = activeCalories
+        self.detail = detail; self.date = date
     }
 }
 
@@ -63,7 +66,8 @@ public func makeBackup(workouts: [LoggedWorkout], activities: [Activity]) -> Bac
         },
         activities: activities.map {
             ActivityPayload(name: $0.name, kind: $0.kind, durationMinutes: $0.durationMinutes,
-                            distanceMiles: $0.distanceMiles, flights: $0.flights, detail: $0.detail, date: $0.date)
+                            distanceMiles: $0.distanceMiles, flights: $0.flights, activeCalories: $0.activeCalories,
+                            detail: $0.detail, date: $0.date)
         }
     )
 }
@@ -82,7 +86,8 @@ public func applyBackup(_ backup: BackupData, to context: ModelContext) {
     }
     for a in backup.activities where !isDuplicate(a) {
         context.insert(Activity(name: a.name, kind: a.kind, durationMinutes: a.durationMinutes,
-                                distanceMiles: a.distanceMiles, flights: a.flights, detail: a.detail, date: a.date))
+                                distanceMiles: a.distanceMiles, flights: a.flights,
+                                activeCalories: a.activeCalories, detail: a.detail, date: a.date))
     }
     try? context.save()
 }

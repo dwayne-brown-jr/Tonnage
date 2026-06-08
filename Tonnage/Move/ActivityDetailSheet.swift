@@ -7,6 +7,7 @@ import TonnageCore
 struct ActivityDetailSheet: View {
     let activity: Activity
     @Environment(\.dismiss) private var dismiss
+    @State private var shareItem: ShareImageItem?
 
     /// The import path stamps this exact string into `detail`; treat it as provenance, not notes.
     private var isImported: Bool { activity.detail == "Imported from Apple Health" }
@@ -32,6 +33,13 @@ struct ActivityDetailSheet: View {
             .navigationTitle("Activity")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: share) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .tint(.accent)
+                    .accessibilityLabel("Share activity")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }.fontWeight(.semibold).tint(.accent)
                 }
@@ -41,6 +49,14 @@ struct ActivityDetailSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+    }
+
+    /// Share this activity as a branded card — same flow as a logged lift on TRAIN.
+    @MainActor private func share() {
+        guard let img = ShareCardRenderer.image(ActivityShareCard(activity: activity)) else { return }
+        Haptics.impact(.light)
+        shareItem = ShareImageItem(image: img)
     }
 
     // MARK: Hero
@@ -81,6 +97,9 @@ struct ActivityDetailSheet: View {
             if let d = activity.distanceMiles, d > 0 {
                 stat("Distance", CoachEngine.fmt(d), "mi")
                 if let pace = paceText { stat("Avg Pace", pace, "/mi") }
+            }
+            if let c = activity.activeCalories, c > 0 {
+                stat("Active Cal", "\(c)", "cal")
             }
             if let f = activity.flights, f > 0 {
                 stat("Flights", "\(f)", "")

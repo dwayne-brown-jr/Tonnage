@@ -84,7 +84,9 @@ enum DemoData {
         for (name, kind, minutes, daysAgo, miles) in specs {
             guard let d = cal.date(byAdding: .day, value: -daysAgo, to: today) else { continue }
             context.insert(Activity(name: name, kind: kind, durationMinutes: minutes,
-                                    distanceMiles: miles, detail: "Demo", date: d))
+                                    distanceMiles: miles,
+                                    activeCalories: Int((kind.kcalPerMinute * Double(minutes)).rounded()),
+                                    detail: "Demo", date: d))
         }
     }
 }

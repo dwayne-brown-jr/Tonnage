@@ -99,6 +99,9 @@ because it strips the iCloud entitlement — build signed for any CloudKit testi
 ## Operational (per release)
 - [ ] Rotate the Anthropic key after each beta round; keep a monthly spend limit on it.
 - [ ] Deploy CloudKit schema Dev→Production whenever @Model types change.
+      ⚠️ **Build 15 REQUIRES this:** added `Activity.activeCalories` (Int?) for the MOVE activity
+      detail/share. Deploy the schema before the build-15 release or that field won't sync (app
+      won't crash — optional field falls back to nil). Build 14 had no schema change; 15 does.
 - [ ] Bump CURRENT_PROJECT_VERSION before each archive.
 - [ ] Separately archive Tonnage Fuel for the goal-suggestion bridge.
 

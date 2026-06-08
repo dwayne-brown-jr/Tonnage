@@ -635,7 +635,16 @@ final class HealthKitManager {
             if isDuplicate { newlySeen.insert(id); continue }
 
             let minutes = max(1, Int((workout.duration / 60).rounded()))
+            // Capture the workout's measured distance + active calories so the detail card has
+            // real numbers (these were never imported before). Distance covers walk/run + cycling.
+            let miles = (workout.statistics(for: HKQuantityType(.distanceWalkingRunning))?.sumQuantity()
+                         ?? workout.statistics(for: HKQuantityType(.distanceCycling))?.sumQuantity())?
+                .doubleValue(for: .mile())
+            let kcal = workout.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?
+                .doubleValue(for: .kilocalorie())
             let activity = Activity(name: name, kind: kind, durationMinutes: minutes,
+                                    distanceMiles: miles.map { ($0 * 100).rounded() / 100 }.flatMap { $0 > 0 ? $0 : nil },
+                                    activeCalories: kcal.map { Int($0.rounded()) }.flatMap { $0 > 0 ? $0 : nil },
                                     detail: "Imported from Apple Health", date: workout.startDate)
             context.insert(activity)
             inserted.append(activity)

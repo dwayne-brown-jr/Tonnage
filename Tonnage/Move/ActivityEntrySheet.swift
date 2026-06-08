@@ -125,6 +125,8 @@ struct ActivityEntrySheet: View {
             durationMinutes: Int(minutes),
             distanceMiles: showsDistance && distance > 0 ? distance : nil,
             flights: showsFlights && flightsCount > 0 ? Int(flightsCount) : nil,
+            // Estimate from the kind's kcal/min — the same value we mirror to Apple Health below.
+            activeCalories: minutes > 0 ? Int((kind.kcalPerMinute * minutes).rounded()) : nil,
             detail: detail,
             date: date
         )

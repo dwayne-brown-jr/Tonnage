@@ -40,7 +40,17 @@ struct RootView: View {
         .environment(restTimer)
         .environment(health)
         .animation(DS.spring, value: restTimer.isVisible)
-        .onChange(of: scenePhase) { _, phase in restTimer.handleScenePhase(phase) }
+        .onChange(of: scenePhase) { _, phase in
+            restTimer.handleScenePhase(phase)
+            // Re-read recovery on foreground so readiness reflects last night's data once a ring/
+            // watch has synced it to Health — not just the cold-launch read. (Skips the demo feed.)
+            if phase == .active, health.hasRequested {
+#if DEBUG
+                if health.isDemoRecovery { return }
+#endif
+                Task { await health.refresh() }
+            }
+        }
         .task {
             SharedProfile.syncFromProfile()   // mirror starting point to Tonnage Fuel
 #if DEBUG

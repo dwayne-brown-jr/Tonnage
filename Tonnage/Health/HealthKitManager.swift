@@ -243,8 +243,39 @@ final class HealthKitManager {
         )
         guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else { return }
         let unit = HKUnit.count().unitDivided(by: .minute())
-        latestRestingHR = mostRecentDayAverage(samples, unit: unit)
-        restingHRBaseline = baseline(of: samples, unit: unit)
+        let owned = singleSourcePerDay(samples)
+        latestRestingHR = mostRecentDayAverage(owned, unit: unit)
+        restingHRBaseline = baseline(of: owned, unit: unit)
+    }
+
+    /// Keep one source per day for a point-metric series, newest-first (for `mostRecentDayAverage`).
+    private func singleSourcePerDay(_ samples: [HKQuantitySample]) -> [HKQuantitySample] {
+        let cal = Calendar.current
+        return dominantSourcePerDay(samples, day: { cal.startOfDay(for: $0.startDate) }, weight: { _ in 1 })
+            .sorted { $0.startDate > $1.startDate }
+    }
+
+    /// Dedupe across wearables. When two devices (e.g. an Apple Watch and an Oura ring) both
+    /// record the same metric, HealthKit returns BOTH sample sets — averaging would blend two
+    /// methodologies (overnight ring vs daytime watch) and, for sleep, SUMMING would double-count
+    /// the night. For each day we keep only the single "dominant" source (the one with the most
+    /// weight that day: sample count for point metrics, total duration for sleep), so exactly one
+    /// device owns each day. Single-source users are unaffected — their one source always wins.
+    private func dominantSourcePerDay<S: HKSample>(_ samples: [S], day: (S) -> Date, weight: (S) -> Double) -> [S] {
+        var byDay: [Date: [String: (weight: Double, items: [S])]] = [:]
+        for s in samples {
+            let d = day(s)
+            let src = s.sourceRevision.source.bundleIdentifier
+            var sources = byDay[d] ?? [:]
+            var entry = sources[src] ?? (0, [])
+            entry.weight += weight(s)
+            entry.items.append(s)
+            sources[src] = entry
+            byDay[d] = sources
+        }
+        return byDay.values.flatMap { sources -> [S] in
+            sources.max(by: { $0.value.weight < $1.value.weight })?.value.items ?? []
+        }
     }
 
     /// Mean over the prior days (today excluded) so "today vs baseline" compares
@@ -279,8 +310,9 @@ final class HealthKitManager {
         )
         guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else { return }
         let unit = HKUnit.secondUnit(with: .milli)
-        latestHRV = mostRecentDayAverage(samples, unit: unit)
-        hrvBaseline = baseline(of: samples, unit: unit)
+        let owned = singleSourcePerDay(samples)
+        latestHRV = mostRecentDayAverage(owned, unit: unit)
+        hrvBaseline = baseline(of: owned, unit: unit)
     }
 
     /// Overnight body/skin temperature (°C). A ring writes a value per night; we compare the
@@ -298,8 +330,9 @@ final class HealthKitManager {
             latestBodyTempC = nil; bodyTempBaselineC = nil; return
         }
         let unit = HKUnit.degreeCelsius()
-        latestBodyTempC = mostRecentDayAverage(samples, unit: unit)
-        bodyTempBaselineC = baseline(of: samples, unit: unit)
+        let owned = singleSourcePerDay(samples)
+        latestBodyTempC = mostRecentDayAverage(owned, unit: unit)
+        bodyTempBaselineC = baseline(of: owned, unit: unit)
     }
 
     /// Overnight respiratory rate (breaths/min), most-recent day vs a ~14-day baseline.
@@ -315,8 +348,9 @@ final class HealthKitManager {
             latestRespiratoryRate = nil; respiratoryRateBaseline = nil; return
         }
         let unit = HKUnit.count().unitDivided(by: .minute())
-        latestRespiratoryRate = mostRecentDayAverage(samples, unit: unit)
-        respiratoryRateBaseline = baseline(of: samples, unit: unit)
+        let owned = singleSourcePerDay(samples)
+        latestRespiratoryRate = mostRecentDayAverage(owned, unit: unit)
+        respiratoryRateBaseline = baseline(of: owned, unit: unit)
     }
 
     private func loadTrainedYesterday() async {
@@ -364,8 +398,10 @@ final class HealthKitManager {
             limit: 4000
         )
         guard let samples = try? await descriptor.result(for: store) else { return [] }
+        // One source per day so a second wearable doesn't blend into the trend.
+        let owned = dominantSourcePerDay(samples, day: { cal.startOfDay(for: $0.startDate) }, weight: { _ in 1 })
         var sums: [Date: (total: Double, count: Int)] = [:]
-        for s in samples {
+        for s in owned {
             let day = cal.startOfDay(for: s.startDate)
             let v = s.quantity.doubleValue(for: unit)
             let cur = sums[day] ?? (0, 0)
@@ -391,8 +427,18 @@ final class HealthKitManager {
             limit: HKObjectQueryNoLimit
         )
         guard let samples = try? await descriptor.result(for: store) else { return nil }
+        // One source per night before tallying stages, so a second wearable doesn't double them.
+        let stageValues: Set<Int> = [
+            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+        ]
+        let owned = dominantSourcePerDay(samples.filter { stageValues.contains($0.value) },
+                                         day: { cal.startOfDay(for: $0.endDate.addingTimeInterval(6 * 3600)) },
+                                         weight: { $0.endDate.timeIntervalSince($0.startDate) })
         var byDay: [Date: SleepStages] = [:]
-        for s in samples {
+        for s in owned {
             let day = cal.startOfDay(for: s.endDate.addingTimeInterval(6 * 3600))
             let hours = s.endDate.timeIntervalSince(s.startDate) / 3600
             var stages = byDay[day] ?? SleepStages()
@@ -423,8 +469,13 @@ final class HealthKitManager {
             HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
             HKCategoryValueSleepAnalysis.asleepREM.rawValue
         ]
+        // Keep one source per night BEFORE summing — otherwise a ring + a watch both logging the
+        // same night would sum to ~double the real sleep. Dominance = most asleep-hours that night.
+        let owned = dominantSourcePerDay(samples.filter { asleep.contains($0.value) },
+                                         day: { cal.startOfDay(for: $0.endDate.addingTimeInterval(6 * 3600)) },
+                                         weight: { $0.endDate.timeIntervalSince($0.startDate) })
         var secs: [Date: Double] = [:]
-        for s in samples where asleep.contains(s.value) {
+        for s in owned {
             // Attribute to the wake-up day. Apple Watch records a single night as many
             // stage samples — some end before midnight, some after. Bucketing by raw
             // `startOfDay(endDate)` splits one night across two calendar days. Shifting

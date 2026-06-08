@@ -307,7 +307,7 @@ struct SettingsView: View {
             } else if health.hasRequested {
                 recoveryReadout
                 connectButton(title: "Refresh from Health")
-                Text("Reads bodyweight, sleep, resting heart rate, and HRV; writes your workouts back. Cardio from other apps imports into MOVE — strength stays in TRAIN. Recovery needs an Apple Watch.")
+                Text("Reads bodyweight, sleep, HRV, resting heart rate, and — from a ring — body temperature & breathing rate; writes your workouts back. Cardio (runs, walks, rides) from other apps imports into MOVE automatically. Strength workouts logged in other apps are NOT imported — log lifts in TRAIN so they count toward progression. Recovery needs an Apple Watch or ring.")
                     .font(.system(.caption2))
                     .foregroundStyle(Color.textTertiary)
             } else {

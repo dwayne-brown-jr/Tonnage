@@ -245,9 +245,16 @@ struct ExerciseLogCard: View {
     }
 
     private func toggleComplete(_ set: LoggedSet) {
+        // Is this the FIRST working set being completed on this workout? If so, the session
+        // shell was dated when it was first opened (could be a different day than you actually
+        // train). Re-anchor the workout to NOW so the Last 7 Days strip, "days lifted," and the
+        // Apple Health workout time all reflect the real training day — not a preview tap.
+        let isFirstCompletion = !set.completed && !set.isWarmup
+            && (exercise.workout?.completedSetCount ?? 0) == 0
         withAnimation(DS.spring) { set.completed.toggle() }
         if set.completed {
             Haptics.success()
+            if isFirstCompletion, let workout = exercise.workout { workout.date = .now }
             if !exercise.isCardio && !set.isWarmup {   // warm-ups don't trigger the rest timer
                 restTimer.startRest(forCompound: exercise.isCompound, label: exercise.name)
             }

@@ -63,7 +63,7 @@ final class HealthKitManager {
     /// Bumped whenever new read types are added to `readTypes`. Lets us re-prompt users who
     /// authorized an earlier set — HealthKit only surfaces a prompt for the *new* types, so a
     /// re-request is silent for anyone already current.
-    private static let authSchemaVersion = 2
+    private static let authSchemaVersion = 3   // v3: added distance (walk/run + cycling) read access
     private var authedSchemaVersion: Int {
         get { UserDefaults.standard.integer(forKey: "hk.authVersion") }
         set { UserDefaults.standard.set(newValue, forKey: "hk.authVersion") }
@@ -87,8 +87,10 @@ final class HealthKitManager {
     private let sleep = HKCategoryType(.sleepAnalysis)
     private let bodyTemp = HKQuantityType(.bodyTemperature)        // ring writes overnight skin temp here
     private let respiratory = HKQuantityType(.respiratoryRate)
+    private let distanceWalkRun = HKQuantityType(.distanceWalkingRunning)   // for importing activity distance
+    private let distanceCycle = HKQuantityType(.distanceCycling)
 
-    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, bodyTemp, respiratory, HKObjectType.workoutType()] }
+    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, bodyTemp, respiratory, distanceWalkRun, distanceCycle, HKObjectType.workoutType()] }
     private var shareTypes: Set<HKSampleType> { [HKQuantityType.workoutType(), bodyMass, activeEnergy] }
 
     // MARK: Authorization
@@ -637,24 +639,35 @@ final class HealthKitManager {
             let minutes = max(1, Int((workout.duration / 60).rounded()))
             // Capture the workout's measured distance + active calories so the detail card has
             // real numbers (these were never imported before). Distance covers walk/run + cycling.
-            let miles = (workout.statistics(for: HKQuantityType(.distanceWalkingRunning))?.sumQuantity()
-                         ?? workout.statistics(for: HKQuantityType(.distanceCycling))?.sumQuantity())?
-                .doubleValue(for: .mile())
-            let kcal = workout.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?
-                .doubleValue(for: .kilocalorie())
             let activity = Activity(name: name, kind: kind, durationMinutes: minutes,
-                                    distanceMiles: miles.map { ($0 * 100).rounded() / 100 }.flatMap { $0 > 0 ? $0 : nil },
-                                    activeCalories: kcal.map { Int($0.rounded()) }.flatMap { $0 > 0 ? $0 : nil },
+                                    distanceMiles: Self.miles(of: workout),
+                                    activeCalories: Self.kcal(of: workout),
                                     detail: "Imported from Apple Health", date: workout.startDate)
             context.insert(activity)
             inserted.append(activity)
             newlySeen.insert(id)
         }
 
+        // Backfill: activities imported by older builds stored only duration. Match each one
+        // missing distance/calories to its workout (same kind, ~same start) and fill the gaps,
+        // so existing history gets the numbers without a delete + re-import.
+        var didEnrich = false
+        let enrichable = existing.filter {
+            $0.detail == "Imported from Apple Health" && ($0.distanceMiles == nil || $0.activeCalories == nil)
+        }
+        for activity in enrichable {
+            guard let w = workouts.first(where: { wk in
+                Self.mapped(wk.workoutActivityType).kind == activity.kind &&
+                abs(wk.startDate.timeIntervalSince(activity.date)) < 90
+            }) else { continue }
+            if activity.distanceMiles == nil, let m = Self.miles(of: w) { activity.distanceMiles = m; didEnrich = true }
+            if activity.activeCalories == nil, let c = Self.kcal(of: w) { activity.activeCalories = c; didEnrich = true }
+        }
+
         // Only remember this batch once the save actually succeeds. A swallowed failure
         // used to mark workouts "seen" anyway, permanently suppressing them — instead we
         // roll back and persist nothing, so the next run retries cleanly.
-        if !inserted.isEmpty {
+        if !inserted.isEmpty || didEnrich {
             do {
                 try context.save()
             } catch {
@@ -669,6 +682,24 @@ final class HealthKitManager {
     /// Lifting workouts belong in TRAIN (logged with sets), never imported into MOVE.
     private static func isStrengthWorkout(_ type: HKWorkoutActivityType) -> Bool {
         type == .traditionalStrengthTraining || type == .functionalStrengthTraining
+    }
+
+    /// Distance in miles for a workout. Tries the workout's own total first (reliable for
+    /// Apple-created workouts) then per-type statistics. Nil if zero/unavailable.
+    private static func miles(of w: HKWorkout) -> Double? {
+        let q = w.totalDistance
+            ?? w.statistics(for: HKQuantityType(.distanceWalkingRunning))?.sumQuantity()
+            ?? w.statistics(for: HKQuantityType(.distanceCycling))?.sumQuantity()
+        guard let d = q?.doubleValue(for: .mile()), d > 0 else { return nil }
+        return (d * 100).rounded() / 100
+    }
+
+    /// Active calories (kcal) for a workout — workout total first, then statistics. Nil if zero.
+    private static func kcal(of w: HKWorkout) -> Int? {
+        let q = w.totalEnergyBurned
+            ?? w.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()
+        guard let c = q?.doubleValue(for: .kilocalorie()), c > 0 else { return nil }
+        return Int(c.rounded())
     }
 
     private static func mapped(_ type: HKWorkoutActivityType) -> (name: String, kind: ActivityKind) {

@@ -6,10 +6,11 @@ Backlog of pro-app quality gates and deferred items, captured after the build-13
 ## P0 — App Store blockers / required before public release
 - [x] **Privacy Manifest** (`PrivacyInfo.xcprivacy`) — DONE for the main app (no-tracking,
       health/fitness/photos/name data types, UserDefaults CA92.1). Verified it bundles.
-- [~] Watch app + widget extension `PrivacyInfo.xcprivacy` files CREATED (in each target's folder,
-      declaring UserDefaults CA92.1). VERIFY in Xcode that each is included in its target's bundle
-      before App Store submission — they didn't auto-bundle in an incremental CLI build (synchronized
-      groups may need a re-sync / explicit membership for extension resources). Main-app one is confirmed.
+- [x] Watch app + widget extension `PrivacyInfo.xcprivacy` — VERIFIED bundling. A clean build embeds
+      all four manifests: main app, `PlugIns/TonnageWidgetsExtension.appex`, `Watch/Tonnage Watch App.app`,
+      and `Watch/.../PlugIns/TonnageWatchWidgets.appex`. (The earlier "didn't auto-bundle" was an
+      incremental-build artifact; a clean build resolves it.) Re-confirm on the actual archive by
+      inspecting the `.xcarchive` for the same four files.
 - [ ] **App Store metadata** — privacy nutrition labels (Health + Photos → third party/Anthropic),
       screenshots, age rating, support URL, description, keywords.
 - [ ] **Account deletion** — only if we add accounts (see Auth below); Apple mandates in-app deletion

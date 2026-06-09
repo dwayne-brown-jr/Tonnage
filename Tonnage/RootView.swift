@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import TonnageCore
 
 /// App shell: five-area tab bar (TRAIN / COACH / MOVE / DATA / SETTINGS), plus the
@@ -28,18 +29,30 @@ struct RootView: View {
     /// True only during the genuine first-run sequence, so the split picker is offered to
     /// new users but never auto-shown to people who onboarded before this feature.
     @State private var firstRunFlow = false
+    /// Hide the floating rest-timer bar while a keyboard is up — otherwise the bar, the keyboard,
+    /// and the field being edited stack up at the bottom and clutter the screen. The timer keeps
+    /// running; it just gets out of the way and reappears when the keyboard dismisses.
+    @State private var keyboardVisible = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
             tabs
-            if restTimer.isVisible {
+            if restTimer.isVisible && !keyboardVisible {
                 RestTimerBar()
                     .padding(.bottom, 64)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .environment(restTimer)
         .environment(health)
         .animation(DS.spring, value: restTimer.isVisible)
+        .animation(DS.spring, value: keyboardVisible)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardVisible = false
+        }
         .onChange(of: scenePhase) { _, phase in
             restTimer.handleScenePhase(phase)
             // Re-read recovery on foreground so readiness reflects last night's data once a ring/

@@ -72,8 +72,11 @@ final class RestTimer {
     }
 
     private func tick() {
-        remainingSeconds = computeRemaining()
-        if remainingSeconds <= 0 { fireComplete() }
+        let r = computeRemaining()
+        // Only publish when the displayed second actually changes — the 0.2s tick (for prompt
+        // completion) would otherwise re-render the bar 5×/sec on the same value.
+        if r != remainingSeconds { remainingSeconds = r }
+        if r <= 0 { fireComplete() }
     }
 
     private func computeRemaining() -> Int {

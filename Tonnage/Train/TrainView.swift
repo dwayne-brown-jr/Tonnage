@@ -34,6 +34,7 @@ struct TrainView: View {
     @State private var saveFailed = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
     @State private var showRecovery = false
+    @State private var showAddExercise = false
     @State private var showPlanBlock = false
     @State private var showReplanBlock = false
     @State private var confirmNewBlock = false
@@ -103,6 +104,9 @@ struct TrainView: View {
         }
         .onDisappear { store.pruneIfEmpty(store.workout) }
         .sheet(isPresented: $showRecovery) { RecoveryView() }
+        .sheet(isPresented: $showAddExercise) {
+            EditExerciseSheet(store: store, exercise: nil, mode: .addCustom)
+        }
         .sheet(isPresented: $showPlanBlock) {
             PlanBlockSheet(currentBlockNumber: currentBlock) { startNewBlock() }
         }
@@ -168,6 +172,7 @@ struct TrainView: View {
                             store: store
                         )
                     }
+                    addExerciseButton
                     SessionNotesField(workout: workout)
                     if workout.completedSetCount > 0 {
                         saveSessionButton(workout)
@@ -191,6 +196,24 @@ struct TrainView: View {
             // hidden behind the block dropdown.
             if dayType == .lift && week >= 5 { planNextBlockButton }
         }
+    }
+
+    /// Adds an extra lift/accessory to THIS week's session (e.g. calisthenics on Upper A).
+    /// Quick-add picks or manual entry; reverts next week like any per-week edit.
+    private var addExerciseButton: some View {
+        Button {
+            Haptics.selection()
+            showAddExercise = true
+        } label: {
+            Label("Add Exercise", systemImage: "plus.circle.fill")
+                .font(.system(.subheadline, weight: .semibold)).foregroundStyle(Color.accent)
+                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                .background(Color.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                    .strokeBorder(Color.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Add another lift or calisthenics to this session")
     }
 
     private var planNextBlockButton: some View {

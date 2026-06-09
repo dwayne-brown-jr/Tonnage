@@ -50,6 +50,7 @@ struct StepperField: View {
                     .keyboardType(isDecimal ? .decimalPad : .numberPad)
                     .multilineTextAlignment(.center)
                     .font(DSFont.number)
+                    .monospacedDigit()                 // match the Text so the swap doesn't shift width
                     .foregroundStyle(Color.accent)
                     .focused($focused)
                     .onSubmit(commit)

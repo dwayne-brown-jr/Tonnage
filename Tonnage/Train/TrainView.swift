@@ -70,6 +70,7 @@ struct TrainView: View {
         }
         .tint(.accent)
         .task {
+            Haptics.warmUp()                 // warm the Taptic Engine so the first tap is instant
             store.configure(context)
             selectedBlock = currentBlock
             if !sessions.indices.contains(sessionIndex) { sessionIndex = 0 }   // saved index may be stale

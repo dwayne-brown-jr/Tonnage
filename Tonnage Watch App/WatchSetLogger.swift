@@ -21,6 +21,10 @@ struct WatchSetLogger: View {
     var body: some View {
         ScrollView {
             VStack(spacing: DS.Spacing.sm) {
+                // The rest countdown lives where the lifter actually is between sets —
+                // right on the logger — with the two actions that matter mid-rest.
+                if rest.isRunning { restRow }
+
                 Text("SET \(setIndex + 1) / \(exercise.sets.count)")
                     .font(.system(.caption2, weight: .bold))
                     .foregroundStyle(.secondary)
@@ -72,6 +76,30 @@ struct WatchSetLogger: View {
             crownFocused = true
             load()
         }
+    }
+
+    private var restRow: some View {
+        HStack(spacing: DS.Spacing.sm) {
+            Image(systemName: "timer").foregroundStyle(Color.accent)
+            // OS-driven countdown — keeps ticking on the Always-On display.
+            if let end = rest.endDate {
+                Text(timerInterval: Date.now...end, countsDown: true)
+                    .font(.system(.headline, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Color.accent)
+            } else {
+                Text("\(rest.remaining)s")
+                    .font(.system(.headline, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Color.accent)
+            }
+            Spacer()
+            Button("+30s") {
+                rest.add(30)
+                WKInterfaceDevice.current().play(.click)
+            }
+            .font(.caption).buttonStyle(.borderless).tint(.accent)
+            Button("Skip") { rest.skip() }.font(.caption).buttonStyle(.borderless).tint(.accent)
+        }
+        .padding(.horizontal, 4)
     }
 
     private func crownButton(_ symbol: String, action: @escaping () -> Void) -> some View {

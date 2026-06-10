@@ -80,8 +80,19 @@ struct WatchSessionView: View {
     private var restRow: some View {
         HStack {
             Image(systemName: "timer").foregroundStyle(Color.accent)
-            Text("Rest \(rest.remaining)s").font(.headline.monospacedDigit())
+            // OS-driven countdown — keeps ticking on the Always-On display.
+            if let end = rest.endDate {
+                Text(timerInterval: Date.now...end, countsDown: true)
+                    .font(.headline.monospacedDigit())
+            } else {
+                Text("Rest \(rest.remaining)s").font(.headline.monospacedDigit())
+            }
             Spacer()
+            Button("+30s") {
+                rest.add(30)
+                WKInterfaceDevice.current().play(.click)
+            }
+            .font(.caption).buttonStyle(.borderless).tint(.accent)
             Button("Skip") { rest.skip() }.font(.caption).buttonStyle(.borderless).tint(.accent)
         }
     }

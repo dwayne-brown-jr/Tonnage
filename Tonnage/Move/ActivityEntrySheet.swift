@@ -131,7 +131,7 @@ struct ActivityEntrySheet: View {
             date: date
         )
         context.insert(activity)
-        try? context.save()
+        context.saveOrReport()
         Task { await health.saveActivity(activity) }   // mirror to Apple Health (no-op if off)
         Haptics.success()
         dismiss()

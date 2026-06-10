@@ -91,7 +91,7 @@ final class CoachViewModel {
         messages.removeAll()
         errorText = nil
         try? context?.delete(model: CoachChatMessage.self)
-        try? context?.save()
+        context?.saveOrReport()
     }
 
     // MARK: Persistence
@@ -100,7 +100,7 @@ final class CoachViewModel {
         messages.append(message)
         guard let context else { return }
         context.insert(CoachChatMessage(id: message.id, roleRaw: message.role.rawValue, text: message.text))
-        try? context.save()
+        context.saveOrReport()
     }
 
     private func loadHistory() {

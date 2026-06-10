@@ -13,6 +13,11 @@ struct RecoveryView: View {
     @Query(sort: \LoggedWorkout.weekNumber) private var workouts: [LoggedWorkout]
     @AppStorage("currentBlock") private var currentBlock = 1
     @AppStorage("train.week") private var trainWeek = 1
+    /// "block:week" — when it matches the current TRAIN selection, the Coach's Call
+    /// treats that week as a deload (see TrainView).
+    @AppStorage("train.deloadOverride") private var deloadOverrideKey = ""
+
+    private var deloadActive: Bool { deloadOverrideKey == "\(currentBlock):\(trainWeek)" }
     @State private var series = RecoverySeries()
     @State private var sleepStages: SleepStages?
     @State private var loaded = false
@@ -196,6 +201,29 @@ struct RecoveryView: View {
                             .font(DSFont.callout)
                             .foregroundStyle(Color.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        // The deload advice is actionable, not just informational —
+                        // one tap flips this week to deload-week coaching on TRAIN.
+                        if insight.id == "deload" {
+                            if deloadActive {
+                                Label("Deload active for this week", systemImage: "checkmark.circle.fill")
+                                    .font(.system(.caption, weight: .bold))
+                                    .foregroundStyle(Color.success)
+                                    .padding(.top, 4)
+                            } else {
+                                Button {
+                                    deloadOverrideKey = "\(currentBlock):\(trainWeek)"
+                                    Haptics.success()
+                                } label: {
+                                    Text("Start Deload This Week")
+                                        .font(.system(.caption, weight: .bold))
+                                        .foregroundStyle(Color.onAccent)
+                                        .padding(.horizontal, DS.Spacing.md).padding(.vertical, 6)
+                                        .background(Color.accent, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 4)
+                            }
+                        }
                     }
                     Spacer(minLength: 0)
                 }

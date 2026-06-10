@@ -228,7 +228,7 @@ struct BodyScanSheet: View {
             guard let v = values[type], v > 0 else { continue }
             context.insert(BodyMeasurement(type: type, value: v, date: .now))
         }
-        try? context.save()
+        context.saveOrReport()
         Haptics.success()
         onSaved()
         dismiss()

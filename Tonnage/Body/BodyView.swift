@@ -18,6 +18,7 @@ struct BodyView: View {
     @State private var selectedType: MeasurementType?
     @State private var pickerItem: PhotosPickerItem?
     @State private var viewerPhoto: ProgressPhoto?
+    @State private var showCompare = false
     @State private var scanPickerItem: PhotosPickerItem?
     @State private var scanImage: ScanImage?
     @State private var errorMessage: String?
@@ -61,12 +62,15 @@ struct BodyView: View {
         .sheet(isPresented: $showEntry) {
             BodyMeasurementSheet(lastValues: lastValues) { type, value, date in
                 context.insert(BodyMeasurement(type: type, value: value, date: date))
-                try? context.save()
+                context.saveOrReport()
                 Haptics.success()
             }
         }
         .fullScreenCover(item: $viewerPhoto) { photo in
             ProgressPhotoViewer(photo: photo) { deletePhoto(photo) }
+        }
+        .fullScreenCover(isPresented: $showCompare) {
+            PhotoCompareView(photos: photos)
         }
         .sheet(item: $scanImage) { img in
             BodyScanSheet(imageData: img.data)
@@ -141,7 +145,7 @@ struct BodyView: View {
                 errorMessage = "Couldn't save the photo to this device."; Haptics.warning(); return
             }
             context.insert(photo)
-            try? context.save()
+            context.saveOrReport()
             Haptics.success()
         }
     }
@@ -149,7 +153,7 @@ struct BodyView: View {
     private func deletePhoto(_ photo: ProgressPhoto) {
         if let name = photo.localFilename { ProgressPhotoStore.deleteLocal(name) }
         context.delete(photo)
-        try? context.save()
+        context.saveOrReport()
         Haptics.warning()
         viewerPhoto = nil
     }
@@ -311,13 +315,27 @@ struct BodyView: View {
             if !photos.isEmpty {
                 photoStrip
             }
-            PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
-                Label(photos.isEmpty ? "Add Your First Photo" : "Add Photo", systemImage: "camera.fill")
-                    .font(.system(.subheadline, weight: .bold))
-                    .foregroundStyle(photos.isEmpty ? Color.onAccent : Color.accent)
-                    .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
-                    .background(photos.isEmpty ? AnyShapeStyle(Color.accent) : AnyShapeStyle(Color.accent.opacity(0.12)),
-                                in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+            HStack(spacing: DS.Spacing.sm) {
+                PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+                    Label(photos.isEmpty ? "Add Your First Photo" : "Add Photo", systemImage: "camera.fill")
+                        .font(.system(.subheadline, weight: .bold))
+                        .foregroundStyle(photos.isEmpty ? Color.onAccent : Color.accent)
+                        .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
+                        .background(photos.isEmpty ? AnyShapeStyle(Color.accent) : AnyShapeStyle(Color.accent.opacity(0.12)),
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                }
+                if photos.count >= 2 {
+                    Button { Haptics.impact(.light); showCompare = true } label: {
+                        Label("Compare", systemImage: "square.split.2x1")
+                            .font(.system(.subheadline, weight: .bold))
+                            .foregroundStyle(Color.accent)
+                            .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
+                            .background(Color.accent.opacity(0.12),
+                                        in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("View two progress photos side by side")
+                }
             }
             storageHint
         }
@@ -460,6 +478,87 @@ private struct BodyMeasurementSheet: View {
             .onChange(of: type) { _, t in value = lastValues[t] ?? 0 }
         }
         .preferredColorScheme(.dark)
+    }
+}
+
+/// Side-by-side before/after comparison. Defaults to oldest vs newest; each pane's
+/// date is swappable so any two photos can be compared.
+private struct PhotoCompareView: View {
+    /// Newest-first, as queried by BodyView.
+    let photos: [ProgressPhoto]
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var beforePhoto: ProgressPhoto?
+    @State private var afterPhoto: ProgressPhoto?
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                HStack(spacing: 2) {
+                    pane(title: "BEFORE", selection: $beforePhoto)
+                    pane(title: "AFTER", selection: $afterPhoto)
+                }
+            }
+            .navigationTitle("Compare")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done") { dismiss() }.foregroundStyle(Color.accent)
+                }
+            }
+            .onAppear {
+                if beforePhoto == nil { beforePhoto = photos.last }    // oldest
+                if afterPhoto == nil { afterPhoto = photos.first }     // newest
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func pane(title: String, selection: Binding<ProgressPhoto?>) -> some View {
+        VStack(spacing: DS.Spacing.sm) {
+            if let photo = selection.wrappedValue,
+               let data = ProgressPhotoStore.data(for: photo), let ui = UIImage(data: data) {
+                Image(uiImage: ui)
+                    .resizable().scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
+                ZStack {
+                    Color.surfaceElevated
+                    VStack(spacing: 4) {
+                        Image(systemName: "icloud.slash").font(.system(size: 24, weight: .semibold))
+                        Text("On another device").font(.system(.caption2))
+                    }
+                    .foregroundStyle(Color.textTertiary)
+                }
+            }
+            Menu {
+                ForEach(photos) { photo in
+                    Button {
+                        selection.wrappedValue = photo
+                        Haptics.selection()
+                    } label: {
+                        if photo.persistentModelID == selection.wrappedValue?.persistentModelID {
+                            Label(photo.date.formatted(date: .abbreviated, time: .omitted), systemImage: "checkmark")
+                        } else {
+                            Text(photo.date.formatted(date: .abbreviated, time: .omitted))
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(title).font(.system(size: 10, weight: .heavy)).kerning(1)
+                    Text(selection.wrappedValue?.date.formatted(.dateTime.month(.abbreviated).day().year()) ?? "—")
+                        .font(.system(.caption, weight: .bold))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(Color.textPrimary)
+                .padding(.horizontal, DS.Spacing.sm).padding(.vertical, 6)
+                .background(Capsule().fill(Color.surfaceElevated2))
+            }
+            .padding(.bottom, DS.Spacing.md)
+        }
     }
 }
 

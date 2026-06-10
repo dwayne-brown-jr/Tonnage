@@ -46,7 +46,7 @@ struct MoveView: View {
                                                      set: { if !$0 { pendingDelete = nil } }),
                                 presenting: pendingDelete) { activity in
                 Button("Delete", role: .destructive) {
-                    context.delete(activity); try? context.save(); Haptics.warning()
+                    context.delete(activity); context.saveOrReport(); Haptics.warning()
                 }
                 Button("Cancel", role: .cancel) {}
             }

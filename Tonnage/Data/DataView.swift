@@ -66,6 +66,7 @@ struct DataView: View {
                             muscleVolumeCard
                             volumeCard
                             progressionCard
+                            standardsCard
                             bodyweightCard
                         } else {
                             EmptyStateView(systemImage: "chart.line.uptrend.xyaxis",
@@ -520,6 +521,7 @@ struct DataView: View {
     private var progressionCard: some View {
         let series = selectedExercise.map { Analytics.topSetSeries(for: $0, in: scoped) } ?? []
         let highlight = series.first { $0.week == scrubWeek } ?? series.last
+        let projection = projectedNext(series)
 
         return chartCard(title: "Progression",
                          subtitle: progressionMetric == .e1RM ? "Estimated 1RM — normalizes across rep ranges"
@@ -562,6 +564,30 @@ struct DataView: View {
                             .foregroundStyle(Color.textTertiary.opacity(0.5))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     }
+                    // "If this trend holds" — dashed reach from the last logged week
+                    // to next week's least-squares projection.
+                    if let projection, let last = series.last {
+                        LineMark(x: .value("Week", last.week),
+                                 y: .value(progressionMetric.rawValue, metricValue(last)),
+                                 series: .value("Series", "Projection"))
+                            .foregroundStyle(Color.textTertiary)
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                        LineMark(x: .value("Week", projection.week),
+                                 y: .value(progressionMetric.rawValue, projection.value),
+                                 series: .value("Series", "Projection"))
+                            .foregroundStyle(Color.textTertiary)
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                        PointMark(x: .value("Week", projection.week),
+                                  y: .value(progressionMetric.rawValue, projection.value))
+                            .foregroundStyle(Color.surfaceElevated)
+                            .symbolSize(70)
+                        PointMark(x: .value("Week", projection.week),
+                                  y: .value(progressionMetric.rawValue, projection.value))
+                            .symbol {
+                                Circle().strokeBorder(Color.textTertiary, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+                                    .frame(width: 10, height: 10)
+                            }
+                    }
                 }
                 .chartXScale(domain: 0.5...5.5)
                 .chartXSelection(value: $scrubWeek)
@@ -571,8 +597,28 @@ struct DataView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(selectedExercise ?? "Exercise") \(progressionMetric.rawValue) by week")
                 .accessibilityValue(series.map { "Week \($0.week), \(CoachEngine.fmt(metricValue($0).rounded()))" }.joined(separator: "; "))
+
+                if let projection {
+                    HStack(spacing: DS.Spacing.xs) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("On trend: ~\(CoachEngine.fmt(projection.value.rounded())) \(progressionMetric == .e1RM ? "e1RM" : "lb") by W\(projection.week)")
+                            .font(.system(.caption2, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.textTertiary)
+                    .accessibilityLabel("Projected \(progressionMetric.rawValue) next week: \(CoachEngine.fmt(projection.value.rounded()))")
+                }
             }
         }
+    }
+
+    /// Next week's least-squares projection — only mid-block (nothing to project past W5)
+    /// and only with ≥ 2 logged weeks behind it.
+    private func projectedNext(_ series: [Analytics.TopSetPoint]) -> (week: Int, value: Double)? {
+        guard let last = series.last, last.week < 5 else { return nil }
+        let points = series.map { (x: Double($0.week), y: metricValue($0)) }
+        guard let value = Analytics.linearProjection(points: points, toX: Double(last.week + 1)) else { return nil }
+        return (last.week + 1, value)
     }
 
     private func metricValue(_ p: Analytics.TopSetPoint) -> Double {
@@ -601,6 +647,83 @@ struct DataView: View {
     }
 
     // MARK: Bodyweight (HealthKit lands in M5)
+
+    // MARK: Strength standards
+
+    /// Latest bodyweight — Apple Health first, profile intake as fallback.
+    private var standardsBodyweight: Double? {
+        if let latest = health.bodyweight.last?.pounds, latest > 0 { return latest }
+        let profileWeight = ProfileStore.current.bodyweightLb
+        return profileWeight > 0 ? Double(profileWeight) : nil
+    }
+
+    @ViewBuilder private var standardsCard: some View {
+        let ratings = standardsRatings
+        chartCard(title: "Strength Standards", subtitle: "Best e1RM vs bodyweight",
+                  info: "Where your best estimated 1RM on the big lifts stands relative to your bodyweight, using widely used strength-level tables (e.g. a 1.5× bodyweight bench is advanced territory for men; thresholds adjust for females). Lifetime bests, not just this block.") {
+            if standardsBodyweight == nil {
+                placeholder(icon: "scalemass",
+                            text: "Log a bodyweight (here or in your profile) to rate your lifts against strength standards.")
+            } else if ratings.isEmpty {
+                placeholder(icon: "trophy",
+                            text: "Log barbell squat, bench, deadlift, or overhead press sets to see where you stand.")
+            } else {
+                VStack(spacing: DS.Spacing.md) {
+                    ForEach(ratings, id: \.lift) { standardRow($0) }
+                }
+            }
+        }
+    }
+
+    private var standardsRatings: [StrengthStandards.Rating] {
+        guard let bodyweight = standardsBodyweight else { return [] }
+        let sex = ProfileStore.current.sex
+        let bests = StrengthStandards.bestE1RMs(in: workouts)   // lifetime, all blocks
+        return StrengthStandards.Lift.allCases.compactMap { lift in
+            bests[lift].flatMap {
+                StrengthStandards.rating(lift: lift, e1RM: $0, bodyweightLb: bodyweight, sex: sex)
+            }
+        }
+    }
+
+    private func standardRow(_ r: StrengthStandards.Rating) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(r.lift.label)
+                    .font(.system(.subheadline, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                Text(r.level.label.uppercased())
+                    .font(.system(size: 10, weight: .heavy))
+                    .kerning(0.8)
+                    .foregroundStyle(r.level >= .advanced ? Color.onAccent : Color.textSecondary)
+                    .padding(.horizontal, DS.Spacing.sm).padding(.vertical, 3)
+                    .background(Capsule().fill(r.level >= .advanced ? Color.accent : Color.surfaceElevated2))
+            }
+            HStack(spacing: DS.Spacing.xs) {
+                Text("e1RM \(CoachEngine.fmt(r.estimatedOneRM.rounded()))")
+                    .font(DSFont.numberSm).foregroundStyle(Color.textSecondary)
+                Text("· \(String(format: "%.2f", r.bodyweightMultiple))× BW")
+                    .font(DSFont.numberSm).foregroundStyle(Color.textTertiary)
+                Spacer()
+                if let next = r.nextLevelE1RM {
+                    Text("next at \(CoachEngine.fmt(next.rounded()))")
+                        .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.surfaceElevated2)
+                    Capsule().fill(Color.accent.gradient)
+                        .frame(width: max(6, geo.size.width * r.progressToNext))
+                }
+            }
+            .frame(height: 5)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(r.lift.label): \(r.level.label)")
+        .accessibilityValue("Estimated one rep max \(CoachEngine.fmt(r.estimatedOneRM.rounded())) pounds, \(String(format: "%.2f", r.bodyweightMultiple)) times bodyweight")
+    }
 
     @ViewBuilder private var bodyweightCard: some View {
         chartCard(title: "Bodyweight", subtitle: "Recomp trend",

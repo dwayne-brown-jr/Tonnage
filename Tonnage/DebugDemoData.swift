@@ -49,7 +49,7 @@ enum DemoData {
         }
 
         seedActivities(in: context, today: today, cal: cal)
-        try? context.save()
+        context.saveOrReport()
     }
 
     /// Completed sets that progress ~5 lb/week (so e1RM climbs and PRs fire), with a

@@ -27,6 +27,8 @@ struct SettingsView: View {
 
     @State private var exportDoc: JSONBackupDocument?
     @State private var showExporter = false
+    @State private var csvDoc: CSVDocument?
+    @State private var showCSVExporter = false
     @State private var showImporter = false
     @State private var showResetConfirm = false
     @State private var importMessage: String?
@@ -83,6 +85,13 @@ struct SettingsView: View {
             switch result {
             case .success: importMessage = "Backup saved."; Haptics.success()
             case .failure: importMessage = "Backup wasn't saved."
+            }
+        }
+        .fileExporter(isPresented: $showCSVExporter, document: csvDoc,
+                      contentType: .commaSeparatedText, defaultFilename: "tonnage-workouts") { result in
+            switch result {
+            case .success: importMessage = "CSV saved."; Haptics.success()
+            case .failure: importMessage = "CSV wasn't saved."
             }
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
@@ -163,6 +172,12 @@ struct SettingsView: View {
                     }
                 }
                 dataButton("Import", systemImage: "square.and.arrow.down") { showImporter = true }
+            }
+
+            // Set-level spreadsheet export — for coaches and lifters who live in Sheets.
+            dataButton("Export Workouts as CSV", systemImage: "tablecells") {
+                csvDoc = CSVDocument(text: CSVExport.workoutsCSV(workouts))
+                showCSVExporter = true
             }
 
             Button(role: .destructive) { showResetConfirm = true } label: {
@@ -663,6 +678,19 @@ struct SettingsView: View {
     }
 
     private var divider: some View { Rectangle().fill(Color.hairline).frame(width: DS.Stroke.hairline, height: 28) }
+}
+
+/// Wraps a CSV string for `.fileExporter`.
+struct CSVDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
+    var text: String
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
 }
 
 /// Wraps backup JSON for `.fileExporter`.

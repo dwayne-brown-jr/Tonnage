@@ -89,6 +89,10 @@ public final class LoggedExercise {
     public var repRange: String = ""
     public var rpeTarget: String = ""
     public var prescriptionNotes: String = ""
+    /// Paired with the NEXT exercise (by sortOrder) as a superset: alternate sets,
+    /// rest only after the chain's last movement. Chains (A→B→C) come from
+    /// consecutive flags. Defaults false so existing records migrate untouched.
+    public var supersetWithNext: Bool = false
 
     /// Optional link to the template this came from (nullify on delete).
     public var exerciseTemplate: ExerciseTemplate?
@@ -161,6 +165,14 @@ public final class LoggedSet {
     /// A warm-up (ramp) set — performed but NOT counted as working volume, toward PRs,
     /// top sets, or adherence. Logged like any set; just excluded from the hard-set math.
     public var isWarmup: Bool = false
+    /// A back-off performed immediately after the set above at reduced load, no rest
+    /// between. Counts as working volume; labeled "D" instead of a set number.
+    public var isDropSet: Bool = false
+    /// "As many reps as possible" — the reps field records what was achieved.
+    public var isAMRAP: Bool = false
+    /// Optional per-set note ("felt heavy", "grip gave out") — optional so existing
+    /// records and CloudKit mirroring migrate cleanly.
+    public var note: String?
     public var timestamp: Date = Date.now
     public var sortOrder: Int = 0
 

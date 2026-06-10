@@ -15,8 +15,8 @@ public enum Analytics {
         public let weight: Double
         public let reps: Int
         public var id: Int { week }
-        /// Epley estimated 1RM.
-        public var estimatedOneRepMax: Double { weight * (1 + Double(reps) / 30) }
+        /// Epley estimated 1RM (single source of truth lives in `PersonalRecords.epley`).
+        public var estimatedOneRepMax: Double { PersonalRecords.epley(weight: weight, reps: reps) }
     }
 
     public struct MuscleVolume: Sendable, Identifiable, Equatable {
@@ -113,6 +113,24 @@ public enum Analytics {
             bestByWeek[workout.weekNumber] = point
         }
         return bestByWeek.values.sorted { $0.week < $1.week }
+    }
+
+    /// Least-squares projection of a series to a future x ("if this trend holds…").
+    /// Needs ≥ 2 points and a non-degenerate x spread; nil otherwise or if the
+    /// projected value isn't positive (a falling trend never projects below zero).
+    public static func linearProjection(points: [(x: Double, y: Double)], toX targetX: Double) -> Double? {
+        guard points.count >= 2 else { return nil }
+        let n = Double(points.count)
+        let sx = points.reduce(0) { $0 + $1.x }
+        let sy = points.reduce(0) { $0 + $1.y }
+        let sxx = points.reduce(0) { $0 + $1.x * $1.x }
+        let sxy = points.reduce(0) { $0 + $1.x * $1.y }
+        let denominator = n * sxx - sx * sx
+        guard abs(denominator) > 1e-9 else { return nil }
+        let slope = (n * sxy - sx * sy) / denominator
+        let intercept = (sy - slope * sx) / n
+        let value = slope * targetX + intercept
+        return value > 0 ? value : nil
     }
 
     // Block summary.

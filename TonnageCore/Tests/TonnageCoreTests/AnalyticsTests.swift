@@ -122,3 +122,26 @@ struct AnalyticsTests {
         #expect(Analytics.latestLoggedWeek([w3empty, w4rest]) == nil)
     }
 }
+
+@Suite("Linear projection")
+struct LinearProjectionTests {
+    @Test("Projects a steady +5/week trend one week out")
+    func steadyTrend() {
+        let points = [(x: 1.0, y: 200.0), (x: 2.0, y: 205.0), (x: 3.0, y: 210.0)]
+        let projected = Analytics.linearProjection(points: points, toX: 4)
+        #expect(projected != nil)
+        #expect(abs((projected ?? 0) - 215) < 0.001)
+    }
+
+    @Test("Needs at least two points and a real x spread")
+    func degenerateInputs() {
+        #expect(Analytics.linearProjection(points: [(x: 1, y: 200)], toX: 2) == nil)
+        #expect(Analytics.linearProjection(points: [(x: 2, y: 200), (x: 2, y: 210)], toX: 3) == nil)
+    }
+
+    @Test("A falling trend never projects to zero or below")
+    func neverNegative() {
+        let points = [(x: 1.0, y: 100.0), (x: 2.0, y: 10.0)]
+        #expect(Analytics.linearProjection(points: points, toX: 3) == nil)
+    }
+}

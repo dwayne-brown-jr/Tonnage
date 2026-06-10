@@ -10,7 +10,7 @@ public func seedIfNeeded(_ context: ModelContext) {
     let program = Program(name: "Block 01 / Recomp")
     program.sessions = SeedProgram.makeSessions()
     context.insert(program)
-    try? context.save()
+    context.saveOrReport()
 }
 
 /// Rewrites a program's sessions to match a chosen split. Past logged workouts are kept
@@ -23,7 +23,7 @@ public func applySplit(_ preset: SplitPreset, to program: Program, in context: M
         session.program = program
         context.insert(session)
     }
-    try? context.save()
+    context.saveOrReport()
 }
 
 /// The default program's sessions. Kept as a thin alias over `SplitPreset.upperLower`

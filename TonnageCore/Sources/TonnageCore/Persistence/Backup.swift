@@ -24,12 +24,16 @@ public struct ActivityPayload: Codable, Sendable, Equatable {
 /// Full export of the user's logged data (program seed is recreated on launch, so
 /// it isn't included).
 public struct BackupData: Codable, Sendable, Equatable {
+    /// Bump when the backup schema changes shape. Imports from a NEWER version are
+    /// rejected (decoded → nil) rather than half-read into the store.
+    public static let currentVersion = 1
+
     public var version: Int
     public var exportedAt: Date
     public var workouts: [WorkoutPayload]
     public var activities: [ActivityPayload]
 
-    public init(version: Int = 1, exportedAt: Date = .now,
+    public init(version: Int = BackupData.currentVersion, exportedAt: Date = .now,
                 workouts: [WorkoutPayload], activities: [ActivityPayload]) {
         self.version = version; self.exportedAt = exportedAt
         self.workouts = workouts; self.activities = activities
@@ -45,25 +49,19 @@ public struct BackupData: Codable, Sendable, Equatable {
     }
 
     public func encoded() throws -> Data { try Self.coder().0.encode(self) }
-    public static func decoded(from data: Data) -> BackupData? { try? coder().1.decode(BackupData.self, from: data) }
+    public static func decoded(from data: Data) -> BackupData? {
+        guard let backup = try? coder().1.decode(BackupData.self, from: data),
+              backup.version <= currentVersion else { return nil }
+        return backup
+    }
 }
 
 @MainActor
 public func makeBackup(workouts: [LoggedWorkout], activities: [Activity]) -> BackupData {
     BackupData(
-        workouts: workouts.map { w in
-            WorkoutPayload(
-                blockNumber: w.blockNumber, weekNumber: w.weekNumber, sessionName: w.sessionName, dayType: w.dayType, date: w.date,
-                exercises: w.orderedExercises.map { e in
-                    WorkoutPayload.Exercise(
-                        name: e.name, isCompound: e.isCompound, isCardio: e.isCardio,
-                        prescribedSets: e.prescribedSets, repRange: e.repRange,
-                        rpeTarget: e.rpeTarget, prescriptionNotes: e.prescriptionNotes,
-                        sets: e.orderedSets.map { .init(weight: $0.weight, reps: $0.reps, rpe: $0.rpe, completed: $0.completed) }
-                    )
-                }
-            )
-        },
+        // Full-fidelity snapshot (warm-up flags, cardio metrics, notes) — the same
+        // mapping the watch sync uses, so backup and sync can never drift apart.
+        workouts: workouts.map { WorkoutPayload(from: $0) },
         activities: activities.map {
             ActivityPayload(name: $0.name, kind: $0.kind, durationMinutes: $0.durationMinutes,
                             distanceMiles: $0.distanceMiles, flights: $0.flights, activeCalories: $0.activeCalories,
@@ -89,7 +87,7 @@ public func applyBackup(_ backup: BackupData, to context: ModelContext) {
                                 distanceMiles: a.distanceMiles, flights: a.flights,
                                 activeCalories: a.activeCalories, detail: a.detail, date: a.date))
     }
-    try? context.save()
+    context.saveOrReport()
 }
 
 /// Wipes all logged data (keeps the program). Used by Settings → Reset.
@@ -101,5 +99,5 @@ public func resetLoggedData(in context: ModelContext) {
     if let activities = try? context.fetch(FetchDescriptor<Activity>()) {
         for a in activities { context.delete(a) }
     }
-    try? context.save()
+    context.saveOrReport()
 }

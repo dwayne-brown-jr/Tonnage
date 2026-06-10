@@ -132,3 +132,35 @@ struct CoachEngineTests {
         #expect(tough.weightDeltaLb == 0)
     }
 }
+
+@Suite("Early deload override")
+struct EarlyDeloadTests {
+    @Test("forceDeload routes any mid-block week to deload coaching")
+    func forcedMidBlock() {
+        let last = LastTopSet(weight: 225, reps: 5, rpe: 8)
+        let call = CoachEngine.call(week: 3, last: last, repRange: "5-7", isCardio: false, forceDeload: true)
+        #expect(call.emphasis == .deload)
+        #expect(call.suggestedWeight == 135)   // 60% of 225, rounded to 5
+    }
+
+    @Test("forceDeload beats a hold from low readiness")
+    func beatsReadinessHold() {
+        let last = LastTopSet(weight: 200, reps: 6, rpe: 7)
+        let call = CoachEngine.call(week: 2, last: last, repRange: "5-7", isCardio: false,
+                                    holdProgression: true, forceDeload: true)
+        #expect(call.emphasis == .deload)
+    }
+
+    @Test("No override → weeks behave exactly as before")
+    func defaultUnchanged() {
+        let last = LastTopSet(weight: 225, reps: 5, rpe: 7)
+        let call = CoachEngine.call(week: 3, last: last, repRange: "5-7", isCardio: false)
+        #expect(call.emphasis == .progress)
+    }
+
+    @Test("Cardio ignores the override")
+    func cardioUnaffected() {
+        let call = CoachEngine.call(week: 3, last: nil, repRange: "15 min", isCardio: true, forceDeload: true)
+        #expect(call.emphasis == .neutral)
+    }
+}

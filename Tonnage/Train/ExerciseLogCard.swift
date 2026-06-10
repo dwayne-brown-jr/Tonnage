@@ -87,6 +87,10 @@ struct ExerciseLogCard: View {
                 HStack(spacing: DS.Spacing.xs) {
                     if exercise.isCompound { tag("COMPOUND") }
                     if exercise.isCardio { tag("CARDIO") }
+                    if (exercise.supersetWithNext && store.nextExercise(after: exercise) != nil)
+                        || store.isSupersetContinuation(exercise) {
+                        tag("SUPERSET")
+                    }
                 }
                 Text(exercise.name)
                     .font(.system(.headline, weight: .semibold))
@@ -122,6 +126,26 @@ struct ExerciseLogCard: View {
             }
             Button { formMode = .edit } label: { Label("Edit Prescription", systemImage: "slider.horizontal.3") }
             Button { formMode = .swap } label: { Label("Swap Exercise", systemImage: "arrow.triangle.2.circlepath") }
+            if exercise.supersetWithNext {
+                Button { withAnimation(DS.spring) { store.toggleSuperset(exercise) } } label: {
+                    Label("Unlink Superset", systemImage: "scissors")
+                }
+            } else if store.canSupersetWithNext(exercise) {
+                Button { withAnimation(DS.spring) { store.toggleSuperset(exercise) } } label: {
+                    Label("Superset with Next", systemImage: "link")
+                }
+            }
+            Divider()
+            if store.canMoveExercise(exercise, by: -1) {
+                Button { withAnimation(DS.spring) { store.moveExercise(exercise, by: -1) } } label: {
+                    Label("Move Up", systemImage: "arrow.up")
+                }
+            }
+            if store.canMoveExercise(exercise, by: 1) {
+                Button { withAnimation(DS.spring) { store.moveExercise(exercise, by: 1) } } label: {
+                    Label("Move Down", systemImage: "arrow.down")
+                }
+            }
             Divider()
             Button(role: .destructive) { confirmRemove = true } label: { Label("Remove", systemImage: "trash") }
         } label: {
@@ -194,25 +218,51 @@ struct ExerciseLogCard: View {
                             set: set,
                             label: setLabel(set, at: i),
                             metrics: metrics,
+                            ghost: ghost(forIndex: i),
+                            previousRPE: previousRPE(forIndex: i),
                             onToggleComplete: { toggleComplete(set) },
                             onToggleWarmup: { toggleWarmup(set) },
-                            onDelete: { store.deleteSet(set, from: exercise) }
+                            onDelete: { store.deleteSet(set, from: exercise) },
+                            onApplyGhost: { applyGhost($0, to: set) },
+                            onMetaChanged: { store.save() },
+                            onAddDropSet: exercise.isCardio ? nil : {
+                                withAnimation(DS.spring) { store.addDropSet(after: set, in: exercise) }
+                            }
                         )
                     }
                 }
             }
 
-            Button {
-                store.addSet(to: exercise)
-            } label: {
-                Label("Add Set", systemImage: "plus")
-                    .font(.system(.subheadline, weight: .semibold))
-                    .foregroundStyle(Color.accent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, DS.Spacing.sm)
-                    .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+            HStack(spacing: DS.Spacing.xs) {
+                Button {
+                    store.addSet(to: exercise)
+                } label: {
+                    Label("Add Set", systemImage: "plus")
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, DS.Spacing.sm)
+                        .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                }
+                .buttonStyle(.plain)
+
+                // One-tap warm-up ramp toward the working weight — disappears once
+                // warm-ups exist so it never duplicates a ramp.
+                if store.canAddWarmupRamp(to: exercise) {
+                    Button {
+                        withAnimation(DS.spring) { store.addWarmupRamp(to: exercise) }
+                    } label: {
+                        Label("Warm-up Ramp", systemImage: "flame")
+                            .font(.system(.subheadline, weight: .semibold))
+                            .foregroundStyle(Color.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, DS.Spacing.sm)
+                            .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.sm))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Adds warm-up sets stepping up to your working weight")
+                }
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -225,7 +275,7 @@ struct ExerciseLogCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("How logging works")
                     .font(.system(.caption, weight: .bold)).foregroundStyle(Color.textPrimary)
-                Text("Tap **LEFT** to log reps in reserve — it powers next week's call. Tap a cue to auto-fill the next set. Long-press a set to mark a warm-up.")
+                Text("Tap **LEFT** to log reps in reserve — it powers next week's call. Tap a cue or a **LAST WK** line to auto-fill a set. Long-press a set to mark a warm-up or delete it.")
                     .font(.system(.caption2)).foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -255,9 +305,23 @@ struct ExerciseLogCard: View {
         if set.completed {
             Haptics.success()
             if isFirstCompletion, let workout = exercise.workout { workout.date = .now }
-            if !exercise.isCardio && !set.isWarmup {   // warm-ups don't trigger the rest timer
-                restTimer.startRest(forCompound: exercise.isCompound, label: exercise.name)
+            if !exercise.isCardio && !set.isWarmup {
+                if hasPendingDropSet(after: set) {
+                    // A drop set follows immediately — strip weight and go, no rest.
+                } else if exercise.supersetWithNext, let partner = store.nextExercise(after: exercise) {
+                    // Mid-superset: no rest — go straight to the partner movement.
+                    withAnimation(DS.spring) { expandedID = partner.persistentModelID }
+                } else {
+                    // Warm-ups don't trigger the rest timer; superset chains rest here, at the end.
+                    restTimer.startRest(forCompound: exercise.isCompound, label: exercise.name)
+                    let head = store.supersetHead(of: exercise)
+                    if head !== exercise && !head.isFullyLogged {
+                        // Round done — swing the focus back to the top of the chain.
+                        withAnimation(DS.spring) { expandedID = head.persistentModelID }
+                    }
+                }
             }
+            store.checkForPR(set, exercise: exercise)   // lifetime PR? celebrate in the moment
         } else {
             Haptics.impact(.rigid)
         }
@@ -270,10 +334,51 @@ struct ExerciseLogCard: View {
         Haptics.selection()
     }
 
-    /// "W" for warm-ups; working sets number 1, 2, 3… ignoring any warm-ups before them.
+    /// Is the set right after this one an incomplete drop set? (Then rest waits.)
+    private func hasPendingDropSet(after set: LoggedSet) -> Bool {
+        let sets = exercise.orderedSets
+        guard let i = sets.firstIndex(where: { $0 === set }), i + 1 < sets.count else { return false }
+        return sets[i + 1].isDropSet && !sets[i + 1].completed
+    }
+
+    /// "W" for warm-ups, "D" for drop sets; working sets number 1, 2, 3… ignoring both
+    /// (a drop set belongs to the set above it: "1, D, 2").
     private func setLabel(_ set: LoggedSet, at index: Int) -> String {
         if set.isWarmup { return "W" }
-        return "\(exercise.orderedSets.prefix(index + 1).filter { !$0.isWarmup }.count)"
+        if set.isDropSet { return "D" }
+        return "\(exercise.orderedSets.prefix(index + 1).filter { !$0.isWarmup && !$0.isDropSet }.count)"
+    }
+
+    // MARK: Last-week ghosts & effort shortcut
+
+    /// Last week's matching working set for the set at `index` (warm-ups don't consume
+    /// a ghost slot, so working set N always lines up with last week's working set N).
+    private func ghost(forIndex index: Int) -> LastTopSet? {
+        guard !exercise.isCardio, let lastSets = guidance?.lastSets, !lastSets.isEmpty else { return nil }
+        let sets = exercise.orderedSets
+        guard index < sets.count, !sets[index].isWarmup, !sets[index].isDropSet else { return nil }
+        let workingIndex = sets.prefix(index + 1).filter { !$0.isWarmup && !$0.isDropSet }.count - 1
+        guard lastSets.indices.contains(workingIndex) else { return nil }
+        return lastSets[workingIndex]
+    }
+
+    /// Fill a set with last week's numbers in one tap.
+    private func applyGhost(_ ghost: LastTopSet, to set: LoggedSet) {
+        withAnimation(DS.snappySpring) {
+            set.weight = ghost.weight
+            set.reps = ghost.reps
+        }
+        store.save()
+        Haptics.impact(.light)
+    }
+
+    /// The previous completed working set's logged effort — powers the "same as last
+    /// set" shortcut in the reps-left menu.
+    private func previousRPE(forIndex index: Int) -> Double? {
+        guard !exercise.isCardio, index > 0 else { return nil }
+        let sets = exercise.orderedSets
+        let prev = sets[..<index].last { $0.completed && !$0.isWarmup }
+        return prev?.rpe
     }
 
     // MARK: Set-to-set cue
@@ -284,9 +389,11 @@ struct ExerciseLogCard: View {
     private func nextSetCue(forIndex i: Int) -> (cue: NextSetCue, weight: Double)? {
         guard !exercise.isCardio, i > 0 else { return nil }
         let sets = exercise.orderedSets
-        guard i < sets.count, !sets[i].completed, !sets[i].isWarmup else { return nil }
-        let prev = sets[i - 1]
-        guard prev.completed, !prev.isWarmup, let rpe = prev.rpe else { return nil }
+        guard i < sets.count, !sets[i].completed, !sets[i].isWarmup, !sets[i].isDropSet else { return nil }
+        // Anchor the cue to the last real working set — a drop set's reduced load
+        // would otherwise suggest a nonsense target for the next set.
+        guard let prev = sets[..<i].last(where: { !$0.isWarmup && !$0.isDropSet }),
+              prev.completed, let rpe = prev.rpe else { return nil }
         let target = CoachEngine.targetRPE(forSetIndex: i - 1, in: exercise.rpeTarget)
         let cue = CoachEngine.nextSetCue(loggedRPE: rpe, targetRPE: target, isCompound: exercise.isCompound,
                                          holdProgression: store.readinessHoldsProgression)

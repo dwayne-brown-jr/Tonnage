@@ -26,6 +26,9 @@ struct TrainView: View {
     // Day type is a transient mode, NOT persisted — it resets to Lift each launch so the
     // screen never gets stuck showing a rest day.
     @State private var dayType: DayType = .lift
+    /// "block:week" — when it matches the on-screen selection, this week runs as an
+    /// early deload (readiness-advised from Recovery, or manual from the block menu).
+    @AppStorage("train.deloadOverride") private var deloadOverrideKey = ""
     // Which calendar day a rest is being logged for. Defaults to today; backdate it to
     // record a rest you took but didn't log (e.g. yesterday). Resets to today each launch.
     @State private var restDate: Date = .now
@@ -46,7 +49,9 @@ struct TrainView: View {
         sessions.indices.contains(sessionIndex) ? sessions[sessionIndex] : nil
     }
 
-    var body: some View {
+    // Split from `body`: the screen layout and the modifier chain each stay small
+    // enough for the type-checker (one combined expression stopped compiling).
+    private var screen: some View {
         NavigationStack {
             ZStack(alignment: .top) {
                 Color.surface.ignoresSafeArea()
@@ -65,10 +70,23 @@ struct TrainView: View {
                 }
 
                 compactBar
+
+                if let pr = store.celebration {
+                    PRToast(pr: pr) { store.dismissCelebration() }
+                        .padding(.horizontal, DS.Spacing.lg)
+                        .padding(.top, DS.Spacing.sm)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(2)
+                }
             }
             .toolbar(.hidden, for: .navigationBar)
         }
+        .animation(DS.spring, value: store.celebration)
         .tint(.accent)
+    }
+
+    var body: some View {
+        screen
         .task {
             Haptics.warmUp()                 // warm the Taptic Engine so the first tap is instant
             store.configure(context)
@@ -84,6 +102,10 @@ struct TrainView: View {
             if (store.workout?.completedSetCount ?? 0) == 0 { reload() }
         }
         .onChange(of: selectedBlock) { reload() }
+        .onChange(of: deloadOverrideKey) {            // started from Recovery's insight card
+            reload()
+            store.applySuggestedWeights()
+        }
         .onChange(of: currentBlock) { PhoneConnectivity.shared.pushContext() }   // sync active block to watch
         .onChange(of: week) { reload() }
         .onChange(of: sessionIndex) { reload() }
@@ -163,6 +185,7 @@ struct TrainView: View {
             }
             switch dayType {
             case .lift:
+                if deloadActive { deloadBanner }
                 SessionStatsBar(workout: store.workout)
                 if let workout = store.workout {
                     ForEach(workout.orderedExercises, id: \.persistentModelID) { exercise in
@@ -197,6 +220,33 @@ struct TrainView: View {
             // hidden behind the block dropdown.
             if dayType == .lift && week >= 5 { planNextBlockButton }
         }
+    }
+
+    /// Early-deload state — visible, with an obvious way out.
+    private var deloadBanner: some View {
+        HStack(spacing: DS.Spacing.sm) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Color.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("EARLY DELOAD").dsLabel()
+                Text("This week runs at ~60% loads with 4–5 in reserve. Recover hard.")
+                    .font(.system(.caption))
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("End") { setDeload(false) }
+                .font(.system(.caption, weight: .bold))
+                .foregroundStyle(Color.accent)
+                .buttonStyle(.plain)
+        }
+        .padding(DS.Spacing.sm)
+        .background(Color.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.accent.opacity(0.35), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Early deload active this week. Loads cut to about 60 percent.")
     }
 
     /// Adds an extra lift/accessory to THIS week's session (e.g. calisthenics on Upper A).
@@ -286,6 +336,17 @@ struct TrainView: View {
                 }
             }
             Divider()
+            if dayType == .lift && week < 5 {
+                if deloadActive {
+                    Button { setDeload(false) } label: {
+                        Label("End Early Deload", systemImage: "arrow.uturn.backward.circle")
+                    }
+                } else {
+                    Button { setDeload(true) } label: {
+                        Label("Deload This Week", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
             Button { showPlanBlock = true } label: {
                 Label("Plan Block \(String(format: "%02d", currentBlock + 1)) (Coach)",
                       systemImage: "brain.head.profile")
@@ -349,10 +410,19 @@ struct TrainView: View {
         }
     }
 
+    private var deloadActive: Bool { deloadOverrideKey == "\(selectedBlock):\(week)" }
+
+    private func setDeload(_ on: Bool) {
+        deloadOverrideKey = on ? "\(selectedBlock):\(week)" : ""
+        // onChange(of: deloadOverrideKey) reloads + re-prefills untouched sets.
+        if on { Haptics.success() } else { Haptics.impact(.rigid) }
+    }
+
     private func reload() {
         guard let session else { return }
         sessionSaved = false
         saveFailed = false
+        store.deloadOverridden = deloadActive
         publishFocus(session)
         switch dayType {
         case .lift:
@@ -380,6 +450,47 @@ struct TrainView: View {
         guard let session else { return }
         WidgetSync.refresh(context: context, block: selectedBlock, week: week,
                            sessionName: session.name, sessionFocus: session.subtitle)
+    }
+}
+
+// MARK: - PR toast
+
+/// In-the-moment lifetime-PR celebration — slides in from the top when a logged set
+/// beats the exercise's best e1RM, auto-dismisses, tap to dismiss early.
+private struct PRToast: View {
+    let pr: PRCelebration
+    let onDismiss: () -> Void
+
+    var body: some View {
+        Button(action: onDismiss) {
+            HStack(spacing: DS.Spacing.sm) {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.onAccent)
+                    .symbolEffect(.bounce, options: .nonRepeating)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("LIFETIME PR")
+                        .font(.system(size: 10, weight: .heavy))
+                        .kerning(1.2)
+                        .foregroundStyle(Color.onAccent.opacity(0.85))
+                    Text("\(pr.exerciseName) — \(CoachEngine.fmt(pr.weight)) × \(pr.reps)")
+                        .font(.system(.subheadline, weight: .bold))
+                        .foregroundStyle(Color.onAccent)
+                        .lineLimit(1)
+                    Text("est. 1RM \(CoachEngine.fmt(pr.estimatedOneRM)) lb")
+                        .font(DSFont.numberSm)
+                        .foregroundStyle(Color.onAccent.opacity(0.85))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(DS.Spacing.md)
+            .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .shadow(color: Color.accent.opacity(0.45), radius: 14, y: 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Lifetime personal record: \(pr.exerciseName), \(CoachEngine.fmt(pr.weight)) pounds for \(pr.reps) reps")
+        .accessibilityHint("Tap to dismiss")
     }
 }
 
@@ -496,7 +607,7 @@ private struct SessionNotesField: View {
                 }
         }
         .onChange(of: focused) { _, isFocused in
-            if !isFocused { try? context.save() }   // persist (+ visible exit) when editing ends
+            if !isFocused { context.saveOrReport() }   // persist (+ visible exit) when editing ends
         }
     }
 }

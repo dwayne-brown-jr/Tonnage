@@ -10,24 +10,49 @@ struct SetRow: View {
     /// Display label for the set number — "1", "2"… for working sets, "W" for warm-ups.
     let label: String
     let metrics: [SetMetric]
+    /// What this set looked like in the last comparable session (working sets only) —
+    /// shown as a tappable ghost line that fills weight + reps in one tap.
+    var ghost: LastTopSet? = nil
+    /// The previous completed set's logged effort, surfaced as a "same as last set"
+    /// shortcut in the reps-left menu.
+    var previousRPE: Double? = nil
     let onToggleComplete: () -> Void
     let onToggleWarmup: () -> Void
     let onDelete: () -> Void
+    var onApplyGhost: ((LastTopSet) -> Void)? = nil
+    /// Called after set metadata (note, AMRAP) changes so the owner can persist.
+    var onMetaChanged: (() -> Void)? = nil
+    /// Inserts a drop set right after this one (nil hides the menu item, e.g. cardio).
+    var onAddDropSet: (() -> Void)? = nil
+
+    @State private var editingNote = false
+    @State private var noteDraft = ""
 
     var body: some View {
-        HStack(spacing: DS.Spacing.sm) {
-            Text(label)
-                .font(DSFont.numberSm)
-                .foregroundStyle(set.isWarmup ? Color.textTertiary : (set.completed ? Color.accent : Color.textTertiary))
-                .frame(width: 16)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: DS.Spacing.sm) {
+                Text(label)
+                    .font(DSFont.numberSm)
+                    .foregroundStyle(set.isWarmup ? Color.textTertiary : (set.completed ? Color.accent : Color.textTertiary))
+                    .frame(width: 16)
 
-            ForEach(metrics) { metric in
-                control(for: metric)
+                ForEach(metrics) { metric in
+                    control(for: metric)
+                }
+
+                Spacer(minLength: 0)
+
+                CompleteButton(completed: set.completed, action: onToggleComplete)
             }
-
-            Spacer(minLength: 0)
-
-            CompleteButton(completed: set.completed, action: onToggleComplete)
+            if set.isAMRAP {
+                amrapLine
+            }
+            if let ghost, !set.completed, !set.isWarmup {
+                ghostLine(ghost)
+            }
+            if let note = set.note, !note.isEmpty {
+                noteLine(note)
+            }
         }
         .padding(.vertical, DS.Spacing.xs)
         .opacity(set.isWarmup ? 0.8 : (set.completed ? 1 : 0.92))
@@ -36,10 +61,105 @@ struct SetRow: View {
                 Label(set.isWarmup ? "Mark as Working Set" : "Mark as Warm-up",
                       systemImage: set.isWarmup ? "dumbbell" : "flame")
             }
+            if let onAddDropSet, !set.isWarmup {
+                Button(action: onAddDropSet) {
+                    Label("Add Drop Set", systemImage: "arrow.down.right")
+                }
+            }
+            if !set.isWarmup {
+                Button {
+                    set.isAMRAP.toggle()
+                    onMetaChanged?()
+                    Haptics.selection()
+                } label: {
+                    Label(set.isAMRAP ? "Unmark AMRAP" : "Mark as AMRAP", systemImage: "bolt")
+                }
+            }
+            Button {
+                noteDraft = set.note ?? ""
+                editingNote = true
+            } label: {
+                Label((set.note?.isEmpty ?? true) ? "Add Note" : "Edit Note", systemImage: "note.text")
+            }
             Button(role: .destructive, action: onDelete) {
                 Label("Delete Set", systemImage: "trash")
             }
         }
+        .alert("Set Note", isPresented: $editingNote) {
+            TextField("e.g. felt heavy, grip gave out", text: $noteDraft)
+            Button("Save") {
+                let trimmed = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                set.note = trimmed.isEmpty ? nil : trimmed
+                onMetaChanged?()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A short note just for this set.")
+        }
+    }
+
+    /// "Go to failure" marker under the inputs.
+    private var amrapLine: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 9, weight: .bold))
+            Text("AMRAP — as many reps as possible")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(Color.accent)
+        .padding(.leading, 16 + DS.Spacing.sm)
+        .padding(.vertical, 2)
+        .accessibilityLabel("AMRAP set: as many reps as possible")
+    }
+
+    /// Per-set note, shown under the inputs. Tap to edit.
+    private func noteLine(_ note: String) -> some View {
+        Button {
+            noteDraft = note
+            editingNote = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 9, weight: .bold))
+                Text(note)
+                    .font(.system(size: 11))
+                    .italic()
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .foregroundStyle(Color.textTertiary)
+            .padding(.leading, 16 + DS.Spacing.sm)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Set note: \(note)")
+        .accessibilityHint("Tap to edit")
+    }
+
+    /// "LAST WK 225 × 5" under the inputs — tap to fill this set with last week's numbers.
+    private func ghostLine(_ ghost: LastTopSet) -> some View {
+        Button {
+            onApplyGhost?(ghost)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 9, weight: .bold))
+                Text("LAST WK \(CoachEngine.fmt(ghost.weight)) × \(ghost.reps)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+                Text("· tap to use")
+                    .font(.system(size: 11))
+                    .opacity(0.7)
+            }
+            .foregroundStyle(Color.textTertiary)
+            .padding(.leading, 16 + DS.Spacing.sm)   // align under the inputs, past the set label
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Last week: \(CoachEngine.fmt(ghost.weight)) pounds for \(ghost.reps) reps")
+        .accessibilityHint("Fills this set with last week's weight and reps")
     }
 
     @ViewBuilder private func control(for metric: SetMetric) -> some View {
@@ -51,7 +171,9 @@ struct SetRow: View {
         case .rpe:
             // Nudge: a completed working set with no reps-left logged loses the data the
             // progression engine runs on — outline the chip so it's clearly worth a tap.
-            RPEChip(rpe: $set.rpe, needsAttention: set.completed && set.rpe == nil && !set.isWarmup)
+            RPEChip(rpe: $set.rpe,
+                    needsAttention: set.completed && set.rpe == nil && !set.isWarmup,
+                    previousRPE: previousRPE)
         case .time:
             TimeStepperField(seconds: intOptionalBinding(\.durationSeconds))
         case .distance:
@@ -112,6 +234,8 @@ private struct CompleteButton: View {
 private struct RPEChip: View {
     @Binding var rpe: Double?
     var needsAttention: Bool = false
+    /// The previous set's logged effort — offered as a one-tap "same as last set" shortcut.
+    var previousRPE: Double? = nil
 
     /// Whole reps-left choices, each mapped to the RPE the engine/store uses.
     private let options: [(label: String, rpe: Double?)] = [
@@ -125,6 +249,16 @@ private struct RPEChip: View {
 
     var body: some View {
         Menu {
+            if let prev = previousRPE, rpe == nil {
+                Button {
+                    rpe = prev
+                    Haptics.selection()
+                } label: {
+                    Label("Same as last set · \(CoachEngine.repsLeftLabel(fromRPE: prev)) left",
+                          systemImage: "clock.arrow.circlepath")
+                }
+                Divider()
+            }
             ForEach(options.indices, id: \.self) { i in
                 let option = options[i]
                 Button {

@@ -20,6 +20,9 @@ struct RootView: View {
     /// first-run (finish profile/split) without dragging existing users — who predate the
     /// split feature and never set this — into the split picker.
     @AppStorage("didEnterFirstRunSetup") private var didEnterSetup = false
+    /// One-time merge of logged exercise-name variants ("Dumbbell Incline Press" →
+    /// "Incline DB Press") so PRs/ghosts/charts share one history per movement.
+    @AppStorage("migration.canonicalNames.v1") private var canonicalNamesMigrated = false
     @AppStorage("currentBlock") private var currentBlock = 1
     @State private var showOnboarding = false
     @State private var showProfile = false
@@ -75,6 +78,16 @@ struct RootView: View {
                 await health.setDemoRecovery(true)
             }
 #endif
+            // Legacy users predate the split feature (didEnterSetup was never set). Their
+            // current program IS their split — record it as chosen so the first-run gating
+            // never dangles; Settings → Training Split remains the way to change it.
+            if hasOnboarded && !didEnterSetup && !hasChosenSplit {
+                hasChosenSplit = true
+            }
+            if !canonicalNamesMigrated {
+                canonicalNamesMigrated = true
+                migrateCanonicalExerciseNames()
+            }
             if !hasOnboarded {
                 showOnboarding = true
             } else if !ProfileStore.isComplete {
@@ -139,6 +152,21 @@ struct RootView: View {
                 showCoachingUpdate = false
             }
         }
+    }
+
+    /// Rewrite logged + template exercise names to their library-canonical form so
+    /// past name variants merge into one history. Conservative: unknown names untouched.
+    private func migrateCanonicalExerciseNames() {
+        var changed = false
+        for ex in (try? modelContext.fetch(FetchDescriptor<LoggedExercise>())) ?? [] {
+            let canonical = ExerciseLibrary.canonicalDisplayName(for: ex.name)
+            if canonical != ex.name { ex.name = canonical; changed = true }
+        }
+        for t in (try? modelContext.fetch(FetchDescriptor<ExerciseTemplate>())) ?? [] {
+            let canonical = ExerciseLibrary.canonicalDisplayName(for: t.name)
+            if canonical != t.name { t.name = canonical; changed = true }
+        }
+        if changed { modelContext.saveOrReport() }
     }
 
     /// Re-present a sheet shortly after another dismisses (a single live fullScreenCover

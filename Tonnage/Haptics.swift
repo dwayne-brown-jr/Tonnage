@@ -20,7 +20,7 @@ enum Haptics {
     private static let selectionGenerator = UISelectionFeedbackGenerator()
 
     static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
-        let generator = impacts[style] ?? impacts[.light]!
+        let generator = impacts[style] ?? UIImpactFeedbackGenerator(style: style)
         generator.impactOccurred()
         generator.prepare()            // keep warm for the next tap
     }

@@ -144,8 +144,10 @@ public enum ReadinessEngine {
         }
 
         if i.trainedYesterday {
-            score -= 7
-            drivers.append(.init("Trained yesterday", .negative, points: -7, magnitude: 7))
+            // A light nudge only — HRV / resting HR / sleep already carry training fatigue, so a
+            // big flat penalty here double-counts and keeps consistent trainers chronically low.
+            score -= 3
+            drivers.append(.init("Trained yesterday", .negative, points: -3, magnitude: 3))
         }
 
         guard signals > 0 else {

@@ -235,7 +235,37 @@ final class HealthKitManager {
         }
     }
 
+    /// Resting HR = the day's LOWEST heart rate (the overnight low), matching how rings like Oura
+    /// report resting HR — and crucially excluding the daytime Apple-Watch readings that inflate
+    /// Apple's own "Resting Heart Rate" metric. Computed efficiently as a daily-min statistic over
+    /// raw heart rate (no giant raw-sample fetch), and source-agnostic (the low is the low whether
+    /// it came from a ring or a watch). Falls back to Apple's restingHeartRate if no HR data exists.
     private func loadResting() async {
+        let cal = Calendar.current
+        guard let start = cal.date(byAdding: .day, value: -14, to: .now) else { return }
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        let descriptor = HKStatisticsCollectionQueryDescriptor(
+            predicate: .quantitySample(type: heartRate, predicate: HKQuery.predicateForSamples(withStart: start, end: nil)),
+            options: .discreteMin,
+            anchorDate: cal.startOfDay(for: .now),
+            intervalComponents: DateComponents(day: 1)
+        )
+        guard let collection = try? await descriptor.result(for: store) else {
+            await loadRestingFromSummary(); return
+        }
+        var mins: [Double] = []
+        collection.statistics().forEach { stat in
+            if let m = stat.minimumQuantity()?.doubleValue(for: unit), m > 0 { mins.append(m) }
+        }
+        guard let today = mins.last else { await loadRestingFromSummary(); return }
+        latestRestingHR = today
+        let prior = mins.dropLast()                                  // baseline = your norm, today excluded
+        restingHRBaseline = prior.isEmpty ? mins.reduce(0, +) / Double(mins.count)
+                                          : prior.reduce(0, +) / Double(prior.count)
+    }
+
+    /// Fallback for devices that write a daily Resting Heart Rate summary but not raw heart rate.
+    private func loadRestingFromSummary() async {
         let start = Calendar.current.date(byAdding: .day, value: -14, to: .now)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
         let descriptor = HKSampleQueryDescriptor(
@@ -312,7 +342,13 @@ final class HealthKitManager {
         )
         guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else { return }
         let unit = HKUnit.secondUnit(with: .milli)
-        let owned = singleSourcePerDay(samples)
+        // Prefer OVERNIGHT HRV (the recovery signal rings report). Daytime Apple-Watch HRV
+        // readings (e.g. Breathe sessions) run high and inflate the number; filtering to night/
+        // morning hours drops them. Filter BEFORE de-duping so the overnight source (the ring)
+        // wins the per-day pick. Fall back to all samples if there's no overnight data.
+        let cal = Calendar.current
+        let overnight = samples.filter { let h = cal.component(.hour, from: $0.startDate); return h >= 20 || h < 11 }
+        let owned = singleSourcePerDay(overnight.isEmpty ? samples : overnight)
         latestHRV = mostRecentDayAverage(owned, unit: unit)
         hrvBaseline = baseline(of: owned, unit: unit)
     }

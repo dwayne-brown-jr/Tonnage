@@ -117,6 +117,8 @@ struct ActivityDetailSheet: View {
                     .font(DSFont.numberXL)
                     .monospacedDigit()
                     .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)   // shrink long values (e.g. pace "23'40\"") instead of wrapping
                 if !unit.isEmpty {
                     Text(unit)
                         .font(DSFont.numberSm)
@@ -124,7 +126,9 @@ struct ActivityDetailSheet: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // maxHeight fills each grid cell to its row's height so every card matches, even if one
+        // value is taller; lineLimit(1) above keeps them uniform in the first place.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(DS.Spacing.md)
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
         .accessibilityElement(children: .combine)

@@ -63,7 +63,7 @@ final class HealthKitManager {
     /// Bumped whenever new read types are added to `readTypes`. Lets us re-prompt users who
     /// authorized an earlier set — HealthKit only surfaces a prompt for the *new* types, so a
     /// re-request is silent for anyone already current.
-    private static let authSchemaVersion = 3   // v3: added distance (walk/run + cycling) read access
+    private static let authSchemaVersion = 4   // v4: added Apple Watch sleeping wrist temperature
     private var authedSchemaVersion: Int {
         get { UserDefaults.standard.integer(forKey: "hk.authVersion") }
         set { UserDefaults.standard.set(newValue, forKey: "hk.authVersion") }
@@ -85,12 +85,13 @@ final class HealthKitManager {
     private let hrv = HKQuantityType(.heartRateVariabilitySDNN)
     private let activeEnergy = HKQuantityType(.activeEnergyBurned)
     private let sleep = HKCategoryType(.sleepAnalysis)
-    private let bodyTemp = HKQuantityType(.bodyTemperature)        // ring writes overnight skin temp here
+    private let bodyTemp = HKQuantityType(.bodyTemperature)        // a ring/thermometer that writes temp
+    private let wristTemp = HKQuantityType(.appleSleepingWristTemperature)   // Apple Watch S8+ overnight temp
     private let respiratory = HKQuantityType(.respiratoryRate)
     private let distanceWalkRun = HKQuantityType(.distanceWalkingRunning)   // for importing activity distance
     private let distanceCycle = HKQuantityType(.distanceCycling)
 
-    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, bodyTemp, respiratory, distanceWalkRun, distanceCycle, HKObjectType.workoutType()] }
+    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, bodyTemp, wristTemp, respiratory, distanceWalkRun, distanceCycle, HKObjectType.workoutType()] }
     private var shareTypes: Set<HKSampleType> { [HKQuantityType.workoutType(), bodyMass, activeEnergy] }
 
     // MARK: Authorization
@@ -353,24 +354,34 @@ final class HealthKitManager {
         hrvBaseline = baseline(of: owned, unit: unit)
     }
 
-    /// Overnight body/skin temperature (°C). A ring writes a value per night; we compare the
-    /// most-recent day to a ~14-day personal baseline, so the absolute offset (some sources log
-    /// 37 + deviation) doesn't matter — only the change vs your own norm drives readiness.
+    /// Overnight temperature (°C), most-recent night vs a ~14-day personal baseline — only the
+    /// change vs your own norm drives readiness, so the absolute offset doesn't matter. Prefers
+    /// the Apple Watch's sleeping wrist temperature (Series 8+); falls back to a generic body-
+    /// temperature source (a ring/thermometer that writes it). Note: Oura does NOT share temp to
+    /// Apple Health, so for ring-only users this stays empty and the driver simply doesn't appear.
     private func loadBodyTemp() async {
+        if await loadTemp(from: wristTemp) { return }
+        if await loadTemp(from: bodyTemp) { return }
+        latestBodyTempC = nil; bodyTempBaselineC = nil
+    }
+
+    /// Reads one temperature type → latest-day value + baseline. Returns false (no data) so the
+    /// caller can fall back to another source. Types aren't mixed (wrist ≈ 35°C vs body ≈ 37°C).
+    private func loadTemp(from type: HKQuantityType) async -> Bool {
         let start = Calendar.current.date(byAdding: .day, value: -14, to: .now)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: nil)
         let descriptor = HKSampleQueryDescriptor(
-            predicates: [.quantitySample(type: bodyTemp, predicate: predicate)],
+            predicates: [.quantitySample(type: type, predicate: predicate)],
             sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)],
             limit: 60
         )
-        guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else {
-            latestBodyTempC = nil; bodyTempBaselineC = nil; return
-        }
+        guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else { return false }
         let unit = HKUnit.degreeCelsius()
         let owned = singleSourcePerDay(samples)
-        latestBodyTempC = mostRecentDayAverage(owned, unit: unit)
+        guard let latest = mostRecentDayAverage(owned, unit: unit) else { return false }
+        latestBodyTempC = latest
         bodyTempBaselineC = baseline(of: owned, unit: unit)
+        return true
     }
 
     /// Overnight respiratory rate (breaths/min), most-recent day vs a ~14-day baseline.
@@ -424,9 +435,17 @@ final class HealthKitManager {
             hrv: await dailyAverage(of: hrv, unit: .secondUnit(with: .milli), predicate: predicate, cal: cal),
             restingHR: await dailyAverage(of: restingHR, unit: .count().unitDivided(by: .minute()), predicate: predicate, cal: cal),
             sleepHours: await dailySleepHours(predicate: predicate, cal: cal),
-            bodyTempC: await dailyAverage(of: bodyTemp, unit: .degreeCelsius(), predicate: predicate, cal: cal),
+            bodyTempC: await tempSeries(predicate: predicate, cal: cal),
             respiratoryRate: await dailyAverage(of: respiratory, unit: .count().unitDivided(by: .minute()), predicate: predicate, cal: cal)
         )
+    }
+
+    /// Temperature trend, preferring the Apple Watch's sleeping wrist temperature, falling back to
+    /// generic body temperature — matching what `loadBodyTemp` scores.
+    private func tempSeries(predicate: NSPredicate, cal: Calendar) async -> [DatedValue] {
+        let wrist = await dailyAverage(of: wristTemp, unit: .degreeCelsius(), predicate: predicate, cal: cal)
+        if !wrist.isEmpty { return wrist }
+        return await dailyAverage(of: bodyTemp, unit: .degreeCelsius(), predicate: predicate, cal: cal)
     }
 
     private func dailyAverage(of type: HKQuantityType, unit: HKUnit, predicate: NSPredicate, cal: Calendar) async -> [DatedValue] {

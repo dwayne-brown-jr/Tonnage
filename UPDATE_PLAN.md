@@ -81,9 +81,12 @@ because it strips the iCloud entitlement — build signed for any CloudKit testi
       Health). Score now: HRV, resting HR, sleep, body temp, respiratory rate, trained-yesterday —
       each transparent. Re-auth schema bump (v2) re-prompts existing users for the new read types;
       demo signals + two trend cards (Body Temp, Respiratory Rate) added; +5 tests (138 total).
-- [ ] **Apple Watch temperature** — Series 8+ writes `appleSleepingWristTemperature` (a *deviation*
-      type, baseline ~0), NOT `bodyTemperature`. To cover Watch users too, read that type and treat
-      its value as the deviation directly (skip the baseline subtraction). Ring users are covered now.
+- [x] **Apple Watch temperature (DONE)** — Series 8+ writes `appleSleepingWristTemperature` (absolute
+      overnight wrist temp, ~35°C), NOT `bodyTemperature`. `loadBodyTemp` now prefers wrist temp →
+      falls back to body temp; the trend chart matches; readiness temp deadband loosened to 0.3°C
+      (wrist temp is noisier than core). Note: **Oura does NOT share HRV, resting-HR summary, or
+      temperature to Apple Health** — so on Oura, Tonnage's temp/HRV come from the Apple Watch, and
+      resting HR comes from the overnight low of the raw Heart Rate that Oura *does* share.
 - [ ] **Oura Cloud API (the "official" Readiness Score) — follow-up milestone.** Pull Oura's own
       Daily Readiness score + contributors via their API. Needs: an Oura developer app, OAuth2 (or a
       Personal Access Token per user), networking, secure token storage (Keychain), a "Connect Oura"

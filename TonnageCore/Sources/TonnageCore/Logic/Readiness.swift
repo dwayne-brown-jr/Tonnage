@@ -103,15 +103,15 @@ public enum ReadinessEngine {
             drivers.append(.init("Resting HR \(Int(rhr.rounded())) bpm", sign, points: pts, magnitude: 16))
         }
 
-        // Overnight body temperature vs baseline — a rise flags illness / incomplete recovery
-        // (this is the signal that makes a ring's readiness feel "smart"). A 0.1°C deadband
-        // absorbs normal night-to-night skin-temp noise; elevation is penalized, cooler gives
-        // only a small credit (being a touch cold isn't strongly restorative).
+        // Overnight body/wrist temperature vs baseline — a rise flags illness / incomplete
+        // recovery. A 0.3°C (~0.5°F) deadband absorbs normal night-to-night skin/wrist-temp noise
+        // (wrist temperature swings more than core), so only a real elevation is penalized; cooler
+        // gives just a small credit (being a touch cold isn't strongly restorative).
         if let temp = i.bodyTempC, let base = i.bodyTempBaselineC, base > 0 {
             signals += 1
             let devC = temp - base
-            let over = devC > 0 ? max(0, devC - 0.1) : min(0, devC + 0.1)
-            let pts = clamp(-over * 36, -16, 6)
+            let over = devC > 0 ? max(0, devC - 0.3) : min(0, devC + 0.3)
+            let pts = clamp(-over * 30, -16, 6)
             score += pts
             let sign: Readiness.Driver.Sign = pts > 1 ? .positive : (pts < -1 ? .negative : .neutral)
             let arrow = devC >= 0 ? "+" : "−"

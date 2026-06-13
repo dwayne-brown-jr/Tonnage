@@ -61,9 +61,10 @@ struct ReadinessDriverTests {
         #expect(warm.score! < neutral.score!)
     }
 
-    @Test("Body temp within the 0.1°C deadband is neutral, not a penalty")
+    @Test("Body temp within the 0.3°C deadband is neutral, not a penalty (wrist temp is noisy)")
     func bodyTempDeadband() {
-        let r = ReadinessEngine.evaluate(.init(bodyTempC: 36.55, bodyTempBaselineC: 36.5))
+        // +0.2°C — normal night-to-night wrist-temp wobble — must not penalize.
+        let r = ReadinessEngine.evaluate(.init(bodyTempC: 36.7, bodyTempBaselineC: 36.5))
         let driver = r.drivers.first { $0.label.hasPrefix("Body temp") }!
         #expect(driver.points == 0)
         #expect(driver.sign == .neutral)

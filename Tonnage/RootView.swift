@@ -69,6 +69,9 @@ struct RootView: View {
         }
         .task {
             SharedProfile.syncFromProfile()   // mirror starting point to Tonnage Fuel
+            // Heal any session template that lost its exercises (older build / partial sync) so a
+            // session never shows up empty. No-op when every session is populated.
+            repairEmptySessions(modelContext, split: ProfileStore.split)
 #if DEBUG
             // UI-test hook: launch with `-uitesting` to bypass the first-run gates and seed
             // demo data, so XCUITest smoke flows land on a populated TRAIN deterministically.

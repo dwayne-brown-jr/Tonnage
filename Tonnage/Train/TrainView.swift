@@ -197,6 +197,7 @@ struct TrainView: View {
                         )
                     }
                     addExerciseButton
+                    workoutDateRow(workout)
                     SessionNotesField(workout: workout)
                     if workout.completedSetCount > 0 {
                         saveSessionButton(workout)
@@ -247,6 +248,28 @@ struct TrainView: View {
             .strokeBorder(Color.accent.opacity(0.35), lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Early deload active this week. Loads cut to about 60 percent.")
+    }
+
+    /// Lets you set the day a session was done — e.g. logging a workout you did earlier, or
+    /// re-creating one. Defaults to today; this only changes the calendar date (which day it
+    /// shows on the Last 7 Days strip / in DATA), never the block/week/session it counts toward.
+    private func workoutDateRow(_ workout: LoggedWorkout) -> some View {
+        HStack(spacing: DS.Spacing.sm) {
+            Image(systemName: "calendar")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.textTertiary)
+            Text("Workout Date").dsLabel()
+            Spacer()
+            DatePicker("", selection: Binding(get: { workout.date },
+                                              set: { workout.date = $0; store.save() }),
+                       in: ...Date.now, displayedComponents: [.date])
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .tint(.accent)
+        }
+        .padding(.horizontal, DS.Spacing.md)
+        .padding(.vertical, DS.Spacing.sm)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
     }
 
     /// Adds an extra lift/accessory to THIS week's session (e.g. calisthenics on Upper A).

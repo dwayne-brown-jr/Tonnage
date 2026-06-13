@@ -299,12 +299,16 @@ struct ExerciseLogCard: View {
         // shell was dated when it was first opened (could be a different day than you actually
         // train). Re-anchor the workout to NOW so the Last 7 Days strip, "days lifted," and the
         // Apple Health workout time all reflect the real training day — not a preview tap.
+        // Skip this if the user backdated the workout (date isn't today) — then it's intentional.
         let isFirstCompletion = !set.completed && !set.isWarmup
             && (exercise.workout?.completedSetCount ?? 0) == 0
         withAnimation(DS.spring) { set.completed.toggle() }
         if set.completed {
             Haptics.success()
-            if isFirstCompletion, let workout = exercise.workout { workout.date = .now }
+            if isFirstCompletion, let workout = exercise.workout,
+               Calendar.current.isDateInToday(workout.date) {
+                workout.date = .now
+            }
             if !exercise.isCardio && !set.isWarmup {
                 if hasPendingDropSet(after: set) {
                     // A drop set follows immediately — strip weight and go, no rest.

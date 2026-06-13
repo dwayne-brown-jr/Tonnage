@@ -18,7 +18,22 @@ public func seedIfNeeded(_ context: ModelContext) {
 /// split picker and the "change split" flow in Settings.
 @MainActor
 public func applySplit(_ preset: SplitPreset, to program: Program, in context: ModelContext) {
-    for old in program.orderedSessions { context.delete(old) }   // cascade-deletes its exercises
+    let oldSessions = program.orderedSessions
+    // Defensively DETACH any logged history from the templates we're about to delete, BEFORE
+    // deleting them. The model uses .nullify, but SwiftData/CloudKit delete-rule propagation can
+    // be unreliable — and a lost logged workout is unacceptable. Logged workouts are found by
+    // block/week/name (not by template), so nil-ing the link is purely cosmetic and fully safe.
+    let oldSessionIDs = Set(oldSessions.map(\.persistentModelID))
+    let oldExerciseIDs = Set(oldSessions.flatMap { $0.orderedExercises }.map(\.persistentModelID))
+    if let workouts = try? context.fetch(FetchDescriptor<LoggedWorkout>()) {
+        for w in workouts {
+            if let t = w.sessionTemplate, oldSessionIDs.contains(t.persistentModelID) { w.sessionTemplate = nil }
+            for ex in (w.exercises ?? []) where ex.exerciseTemplate.map({ oldExerciseIDs.contains($0.persistentModelID) }) ?? false {
+                ex.exerciseTemplate = nil
+            }
+        }
+    }
+    for old in oldSessions { context.delete(old) }   // cascade-deletes only its exercise TEMPLATES
     for session in preset.makeSessions() {
         session.program = program
         context.insert(session)

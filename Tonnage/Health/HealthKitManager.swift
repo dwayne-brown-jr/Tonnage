@@ -343,13 +343,11 @@ final class HealthKitManager {
         )
         guard let samples = try? await descriptor.result(for: store), !samples.isEmpty else { return }
         let unit = HKUnit.secondUnit(with: .milli)
-        // Prefer OVERNIGHT HRV (the recovery signal rings report). Daytime Apple-Watch HRV
-        // readings (e.g. Breathe sessions) run high and inflate the number; filtering to night/
-        // morning hours drops them. Filter BEFORE de-duping so the overnight source (the ring)
-        // wins the per-day pick. Fall back to all samples if there's no overnight data.
-        let cal = Calendar.current
-        let overnight = samples.filter { let h = cal.component(.hour, from: $0.startDate); return h >= 20 || h < 11 }
-        let owned = singleSourcePerDay(overnight.isEmpty ? samples : overnight)
+        // NOTE: an "overnight-only" filter was tried to mimic a ring's sleep HRV, but on an Oura
+        // setup HRV comes from the Apple Watch (Oura doesn't share HRV) — and the Watch's overnight
+        // HRV is noisy AND further from Oura's ring value than its day-average, which made readiness
+        // volatile. So we use the full daily average (more stable). True Oura HRV needs the Oura API.
+        let owned = singleSourcePerDay(samples)
         latestHRV = mostRecentDayAverage(owned, unit: unit)
         hrvBaseline = baseline(of: owned, unit: unit)
     }

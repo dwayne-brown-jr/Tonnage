@@ -578,6 +578,9 @@ final class HealthKitManager {
     @discardableResult
     func saveWorkout(activityType: HKWorkoutActivityType, start: Date, end: Date, energyKcal: Double?) async -> Bool {
         guard isAvailable, end > start else { return false }
+        // HealthKit hard-caps sample durations (4 days for active energy) and raises an
+        // uncatchable NSException past that — clamp so no caller can ever trip it.
+        let end = min(end, start.addingTimeInterval(12 * 3600))
         // Workout write status IS reliable (unlike reads) — don't claim success if denied.
         guard store.authorizationStatus(for: HKObjectType.workoutType()) != .sharingDenied else { return false }
         let configuration = HKWorkoutConfiguration()

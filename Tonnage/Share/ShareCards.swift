@@ -1,4 +1,5 @@
 import SwiftUI
+import LinkPresentation
 import UIKit
 import TonnageCore
 
@@ -29,6 +30,38 @@ struct ShareSheet: UIViewControllerRepresentable {
 struct ShareImageItem: Identifiable {
     let id = UUID()
     let image: UIImage
+    /// Shown as the share sheet's title, e.g. "Pull B · Aug 21".
+    var title: String = "Workout"
+
+    /// A bare `UIImage` gives the share sheet no preview metadata, so its header renders an
+    /// empty placeholder instead of the card. This supplies the title + thumbnail it wants.
+    var activityItem: Any { WorkoutImageSource(image: image, title: title) }
+}
+
+final class WorkoutImageSource: NSObject, UIActivityItemSource {
+    private let image: UIImage
+    private let title: String
+
+    init(image: UIImage, title: String) {
+        self.image = image
+        self.title = title
+        super.init()
+    }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { image }
+
+    func activityViewController(_ controller: UIActivityViewController,
+                                itemForActivityType type: UIActivity.ActivityType?) -> Any? { image }
+
+    func activityViewController(_ controller: UIActivityViewController,
+                                subjectForActivityType type: UIActivity.ActivityType?) -> String { title }
+
+    func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = title
+        metadata.imageProvider = NSItemProvider(object: image)
+        return metadata
+    }
 }
 
 // MARK: - Cards

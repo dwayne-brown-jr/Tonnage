@@ -115,6 +115,8 @@ struct DayTypeToggle: View {
                             .font(.system(size: 11, weight: .bold))
                         Text(type.title)
                             .font(.system(.caption, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                     .foregroundStyle(selected ? Color.accent : Color.textSecondary)
                     .frame(maxWidth: .infinity)
@@ -175,6 +177,8 @@ struct SessionStatsBar: View {
                 .textCase(.uppercase)
                 .kerning(0.6)
                 .foregroundStyle(Color.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity)
     }

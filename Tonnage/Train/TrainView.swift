@@ -33,6 +33,9 @@ struct TrainView: View {
     // record a rest you took but didn't log (e.g. yesterday). Resets to today each launch.
     @State private var restDate: Date = .now
     @State private var expandedID: PersistentIdentifier?
+    /// Which workout has been pushed to Health, by persistent id — `@State` reverted the
+    /// confirmation on every relaunch and invited a pointless second tap.
+    @AppStorage("train.lastHealthSaveKey") private var lastHealthSaveKey = ""
     @State private var sessionSaved = false
     @State private var saveFailed = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
@@ -136,7 +139,7 @@ struct TrainView: View {
         .sheet(isPresented: $showReplanBlock) {
             PlanBlockSheet(currentBlockNumber: currentBlock, mode: .replanCurrent) { reload() }
         }
-        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.activityItem]) }
         .confirmationDialog("Start Block \(String(format: "%02d", currentBlock + 1))?",
                             isPresented: $confirmNewBlock, titleVisibility: .visible) {
             Button("Start Empty Block", role: .destructive) { startNewBlock() }
@@ -146,12 +149,24 @@ struct TrainView: View {
         }
     }
 
+    /// Identifies a session for the "already saved to Health" flag — block/week/session is
+    /// stable across relaunches in a way the transient view state was not.
+    private func healthSaveKey(_ workout: LoggedWorkout) -> String {
+        "\(workout.blockNumber)-\(workout.weekNumber)-\(workout.sessionName)"
+    }
+
+    /// Names the shared card in the share sheet, e.g. "Pull B · Aug 21".
+    private func shareTitle(_ workout: LoggedWorkout) -> String {
+        let name = workout.sessionName.isEmpty ? "Workout" : workout.sessionName
+        return "\(name) · \(workout.date.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
     /// Share the session you just logged as a branded card.
     @MainActor private func shareWorkoutButton(_ workout: LoggedWorkout) -> some View {
         Button {
             if let img = ShareCardRenderer.image(WorkoutShareCard(workout: workout)) {
                 Haptics.impact(.light)
-                shareItem = ShareImageItem(image: img)
+                shareItem = ShareImageItem(image: img, title: shareTitle(workout))
             }
         } label: {
             Label("Share Workout", systemImage: "square.and.arrow.up")
@@ -397,8 +412,14 @@ struct TrainView: View {
             Button {
                 Task {
                     if !health.hasRequested { await health.requestAuthorization() }
-                    let ok = await health.saveLiftingSession(start: workout.date, end: .now)
+                    // Backdated sessions: keep the Health workout on the workout's own day —
+                    // start→.now would span the backdate gap, and HealthKit hard-rejects
+                    // multi-day energy samples (uncatchable NSException).
+                    let start = workout.date
+                    let end = Calendar.current.isDateInToday(start) ? Date.now : start.addingTimeInterval(45 * 60)
+                    let ok = await health.saveLiftingSession(start: start, end: end)
                     if ok {
+                        lastHealthSaveKey = healthSaveKey(workout)
                         withAnimation(DS.spring) { sessionSaved = true; saveFailed = false }
                         Haptics.success()
                     } else {
@@ -443,7 +464,8 @@ struct TrainView: View {
 
     private func reload() {
         guard let session else { return }
-        sessionSaved = false
+        // Restore the Health-save confirmation for whatever session is now on screen.
+        sessionSaved = lastHealthSaveKey == "\(selectedBlock)-\(week)-\(session.name)"
         saveFailed = false
         store.deloadOverridden = deloadActive
         publishFocus(session)
@@ -543,8 +565,12 @@ private struct RestDayView: View {
                 Text(dayType == .activeRest ? "Active Recovery" : "Full Rest")
                     .font(DSFont.title)
                     .foregroundStyle(Color.textPrimary)
+                // "today" is wrong once the date picker is backdated — the button label
+                // already names the real day, so the body should agree.
                 Text(dayType == .activeRest
-                     ? "Easy conditioning today — log walks or stairs in MOVE. It counts toward fatigue, not load."
+                     ? (isToday
+                        ? "Easy conditioning today — log walks or stairs in MOVE. It counts toward fatigue, not load."
+                        : "Easy conditioning — log walks or stairs in MOVE. It counts toward fatigue, not load.")
                      : "Recovery is training. Eat, sleep, hydrate — let the work catch up.")
                     .font(DSFont.callout)
                     .foregroundStyle(Color.textSecondary)

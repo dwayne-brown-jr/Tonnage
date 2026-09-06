@@ -52,11 +52,17 @@ struct SplitPickerSheet: View {
                     Button("Cancel") { dismiss() }.foregroundStyle(Color.textSecondary)
                 }
             }
-            .confirmationDialog("Switch to \(selected.label)?", isPresented: $confirming, titleVisibility: .visible) {
-                Button("Switch Split", role: .destructive) { apply() }
+            .confirmationDialog(hasChosenSplit ? "Switch to \(selected.label)?" : "Start with \(selected.label)?",
+                                isPresented: $confirming, titleVisibility: .visible) {
+                Button(hasChosenSplit ? "Switch Split" : "Use This Split",
+                       role: hasChosenSplit ? .destructive : nil) { apply() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This rewrites your program's sessions to the \(selected.label) layout. Your logged workouts are kept, but the plan going forward changes.")
+                // First run has no program to rewrite and nothing logged to preserve — warning
+                // about both just makes picking a split feel consequential when it isn't.
+                Text(hasChosenSplit
+                     ? "This rewrites your program's sessions to the \(selected.label) layout. Your logged workouts are kept, but the plan going forward changes."
+                     : "Builds your program around the \(selected.label) layout. You can change it anytime in Settings.")
             }
         }
         .tint(.accent)

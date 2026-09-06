@@ -325,11 +325,29 @@ struct ExerciseLogCard: View {
                     }
                 }
             }
+            carryForward(from: set)
             store.checkForPR(set, exercise: exercise)   // lifetime PR? celebrate in the moment
         } else {
             Haptics.impact(.rigid)
         }
         store.save()
+    }
+
+    /// Seeds the next set with what you just lifted. Prescribed sets are all created up front
+    /// from the Coach's Call, so with no history to draw on they start at 0 and you'd retype
+    /// the same load every set — worst on a first-ever session, which has no history at all.
+    /// Only fills sets still sitting at the untouched default, so it never overwrites your own
+    /// entry, a warm-up ramp, a drop set's reduced load, or a cue you tapped.
+    private func carryForward(from set: LoggedSet) {
+        guard !exercise.isCardio, !set.isWarmup, set.weight > 0 else { return }
+        let ordered = exercise.orderedSets
+        guard let i = ordered.firstIndex(where: { $0 === set }) else { return }
+        for next in ordered[(i + 1)...] where !next.isWarmup {
+            guard !next.completed, next.weight == 0 else { return }   // stop at the first set already set up
+            next.weight = set.weight
+            if next.reps == 0 { next.reps = set.reps }
+            return
+        }
     }
 
     private func toggleWarmup(_ set: LoggedSet) {

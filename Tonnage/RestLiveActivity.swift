@@ -22,12 +22,24 @@ enum RestLiveActivity {
     static func update(endDate: Date, exerciseName: String, totalSeconds: Int) {
         guard let activity = current else { return }
         let state = RestTimerAttributes.ContentState(endDate: endDate, exerciseName: exerciseName, totalSeconds: totalSeconds)
-        Task { await activity.update(.init(state: state, staleDate: endDate.addingTimeInterval(5))) }
+        // ActivityKit predates Sendable annotations but documents update/end as callable
+        // from any async context — box the non-Sendable values to cross into the Task.
+        let boxed = UncheckedSendable((activity, ActivityContent(state: state, staleDate: endDate.addingTimeInterval(5))))
+        Task {
+            let (activity, content) = boxed.value
+            await activity.update(content)
+        }
     }
 
     static func end() {
         guard let activity = current else { return }
         current = nil
-        Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        let boxed = UncheckedSendable(activity)
+        Task { await boxed.value.end(nil, dismissalPolicy: .immediate) }
     }
+}
+
+private struct UncheckedSendable<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
 }

@@ -32,6 +32,7 @@ enum CoachError: LocalizedError {
     case missingKey
     case network
     case http(Int, String)
+    case serverUnavailable
     case decoding
     case empty
 
@@ -43,6 +44,8 @@ enum CoachError: LocalizedError {
         // 429 from the proxy carries the friendly daily-quota message — surface it directly.
         case .http(429, let message): message == "unknown" ? "Rate limited — give it a moment, then try again." : message
         case .http(let code, let message): "API error \(code): \(message)"
+        case .serverUnavailable:
+            "Coach is unavailable right now. Try again shortly — or add your own Anthropic API key in Settings for unlimited access."
         case .decoding:   "Got an unexpected response from the API."
         case .empty:      "The coach didn't return anything — try rephrasing."
         }
@@ -116,9 +119,7 @@ struct AnthropicClient {
 
         guard let http = response as? HTTPURLResponse else { throw CoachError.network }
         cacheQuota(from: response)
-        guard http.statusCode == 200 else {
-            throw CoachError.http(http.statusCode, Self.parseError(data))
-        }
+        guard http.statusCode == 200 else { throw failure(status: http.statusCode, data: data) }
         guard let decoded = try? JSONDecoder().decode(ResponseBody.self, from: data) else {
             throw CoachError.decoding
         }
@@ -153,11 +154,19 @@ struct AnthropicClient {
         }
         guard let http = response as? HTTPURLResponse else { throw CoachError.network }
         cacheQuota(from: response)
-        guard http.statusCode == 200 else { throw CoachError.http(http.statusCode, Self.parseError(data)) }
+        guard http.statusCode == 200 else { throw failure(status: http.statusCode, data: data) }
         guard let decoded = try? JSONDecoder().decode(ResponseBody.self, from: data) else { throw CoachError.decoding }
         let text = decoded.content.first(where: { $0.type == "text" })?.text ?? ""
         guard !text.isEmpty else { throw CoachError.empty }
         return text
+    }
+
+    /// On the proxy route the user supplied no key, so an upstream failure is ours, not
+    /// theirs — surfacing its text would tell them to fix a billing account they don't have.
+    /// The 429 is the exception: that one carries our own daily-quota copy.
+    private func failure(status: Int, data: Data) -> CoachError {
+        if case .proxy = route, status != 429 { return .serverUnavailable }
+        return .http(status, Self.parseError(data))
     }
 
     private static func parseError(_ data: Data) -> String {

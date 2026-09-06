@@ -26,6 +26,7 @@ struct DataView: View {
     @State private var shareItem: ShareImageItem?
     @State private var showWorkoutPicker = false
     @State private var progressionMetric: ProgressionMetric = .topSet
+    @State private var detailDay: DayRef?
 
     /// DATA is scoped to the active block so volume/progression don't mix mesocycles.
     private var scoped: [LoggedWorkout] { workouts.filter { $0.blockNumber == currentBlock } }
@@ -90,8 +91,11 @@ struct DataView: View {
         .sheet(isPresented: $showWeightEntry) {
             WeightEntrySheet { pounds in Task { await health.saveBodyMass(pounds: pounds) } }
         }
-        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.activityItem]) }
         .sheet(isPresented: $showWorkoutPicker) { WorkoutPickerSheet(workouts: shareableWorkouts) }
+        .sheet(item: $detailDay) { ref in
+            DayDetailSheet(day: ref.date, workouts: workouts, activities: activities)
+        }
     }
 
     // MARK: Last 7 days strip
@@ -122,7 +126,15 @@ struct DataView: View {
                     message: "Your week at a glance — Lift, Active Rest, Full Rest, or Cardio per day. Rest days you log in TRAIN show up here, and a long run without a full rest will nudge you to take one.")
             }
             HStack(spacing: DS.Spacing.xs) {
-                ForEach(last7Days, id: \.self) { day in dayCell(day) }
+                ForEach(last7Days, id: \.self) { day in
+                    Button {
+                        Haptics.selection()
+                        detailDay = DayRef(date: day)
+                    } label: {
+                        dayCell(day)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(DS.Spacing.lg)
@@ -154,6 +166,7 @@ struct DataView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).month().day()))
         .accessibilityValue(dayStatusWord(status))
+        .accessibilityHint("Opens what you logged this day")
     }
 
     private func dayStatusWord(_ s: DayStatus) -> String {
@@ -923,7 +936,7 @@ private struct WorkoutPickerSheet: View {
         }
         .tint(.accent)
         .preferredColorScheme(.dark)
-        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.activityItem]) }
     }
 
     private func row(_ w: LoggedWorkout) -> some View {
@@ -996,4 +1009,11 @@ private struct WeightEntrySheet: View {
         .modelContainer(TonnageStore.makeContainer(inMemory: true))
         .environment(HealthKitManager())
         .preferredColorScheme(.dark)
+}
+
+
+/// Identifiable wrapper so a tapped calendar day can drive `.sheet(item:)`.
+struct DayRef: Identifiable {
+    let date: Date
+    var id: Date { date }
 }

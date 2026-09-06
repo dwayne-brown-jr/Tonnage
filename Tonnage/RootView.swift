@@ -29,6 +29,7 @@ struct RootView: View {
     @State private var showSplitPicker = false
     @State private var showCoachingUpdate = false
     @State private var showBuildPlan = false
+    @State private var showPlanReveal = false   // first-run payoff after the plan is built
     /// True only during the genuine first-run sequence, so the split picker is offered to
     /// new users but never auto-shown to people who onboarded before this feature.
     @State private var firstRunFlow = false
@@ -116,7 +117,7 @@ struct RootView: View {
 #endif
         }
         .fullScreenCover(isPresented: $showOnboarding) {
-            OnboardingView {
+            OnboardingView(onFinish: {
                 hasOnboarded = true
                 didEnterSetup = true   // mark this as a new-onboarding user so setup can resume
                 showOnboarding = false
@@ -127,13 +128,14 @@ struct RootView: View {
                 } else if !hasChosenSplit {
                     presentAfterDismiss { showSplitPicker = true }
                 }
-            }
+            }, firstRun: true)
             .environment(health)   // covers don't reliably inherit @Observable env
         }
         .fullScreenCover(isPresented: $showProfile) {
             ProfileSetupView {
                 showProfile = false
                 hasAnsweredIntake = true   // the profile form already includes the coaching intake
+                seedBodyweightToHealth()   // the weight they just typed starts the recomp trend
                 // First-run only: chain into the split picker after the profile step.
                 if firstRunFlow && !hasChosenSplit {
                     presentAfterDismiss { showSplitPicker = true }
@@ -146,8 +148,18 @@ struct RootView: View {
                 if firstRunFlow { presentAfterDismiss { showBuildPlan = true } }
             }
         }
-        .fullScreenCover(isPresented: $showBuildPlan, onDismiss: { firstRunFlow = false }) {
+        .fullScreenCover(isPresented: $showBuildPlan, onDismiss: {
+            // Whether they built a custom plan or skipped, end first-run on the personalized
+            // reveal — the "here's YOUR plan" payoff — then into TRAIN.
+            if firstRunFlow {
+                firstRunFlow = false
+                presentAfterDismiss { showPlanReveal = true }
+            }
+        }) {
             PlanBlockSheet(currentBlockNumber: currentBlock, mode: .buildInitial) { }
+        }
+        .fullScreenCover(isPresented: $showPlanReveal) {
+            PlanRevealView { showPlanReveal = false }
         }
         .fullScreenCover(isPresented: $showCoachingUpdate) {
             CoachingUpdateView {
@@ -179,6 +191,16 @@ struct RootView: View {
             try? await Task.sleep(for: .milliseconds(350))
             action()
         }
+    }
+
+    /// Onboarding already asks for bodyweight and uses it for the strength-standard BW
+    /// ratios — write it to Health once so the recomp trend starts on day one instead of
+    /// showing an empty card that asks for a number the app was already given. Never
+    /// overwrites: skipped when Health already has a weight on file.
+    private func seedBodyweightToHealth() {
+        let pounds = Double(UserDefaults.standard.integer(forKey: ProfileStore.Key.weight))
+        guard pounds > 0, health.bodyweight.isEmpty else { return }
+        Task { await health.saveBodyMass(pounds: pounds) }
     }
 
     private var tabs: some View {

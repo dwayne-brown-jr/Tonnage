@@ -10,14 +10,25 @@ struct OnboardingView: View {
     /// Label for the final-page primary button ("Start Training" on first run,
     /// "Done" when re-read from Settings).
     var finishTitle: String = "Start Training"
+    /// First run shows a short, outcome-focused intro (the mechanics are taught in context and in
+    /// Settings → How it works). Off = the full tour, used as the comprehensive Settings recap.
+    var firstRun: Bool = false
 
     @Environment(HealthKitManager.self) private var health
     @AppStorage(ProfileStore.Key.split) private var splitRaw = SplitPreset.upperLower.rawValue
     @State private var page = 0
     @State private var connecting = false
-    private let lastPage = 5
+    private var lastPage: Int { pages.count - 1 }
 
     private var split: SplitPreset { SplitPreset(rawValue: splitRaw) ?? .upperLower }
+
+    /// Outcome/value pages on first run; the full concept tour otherwise.
+    private var pages: [AnyView] {
+        firstRun
+            ? [AnyView(welcomePage), AnyView(recoveryPage)]
+            : [AnyView(welcomePage), AnyView(splitPage), AnyView(blockPage),
+               AnyView(callPage), AnyView(topSetPage), AnyView(recoveryPage)]
+    }
 
     var body: some View {
         ZStack {
@@ -25,12 +36,9 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 topBar
                 TabView(selection: $page) {
-                    welcomePage.tag(0)
-                    splitPage.tag(1)
-                    blockPage.tag(2)
-                    callPage.tag(3)
-                    topSetPage.tag(4)
-                    recoveryPage.tag(5)
+                    ForEach(pages.indices, id: \.self) { i in
+                        pages[i].tag(i)
+                    }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .animation(DS.spring, value: page)

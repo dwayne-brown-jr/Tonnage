@@ -49,7 +49,7 @@ struct ActivityDetailSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
-        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.activityItem]) }
     }
 
     /// Share this activity as a branded card — same flow as a logged lift on TRAIN.

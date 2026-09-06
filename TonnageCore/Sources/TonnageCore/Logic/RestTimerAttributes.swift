@@ -6,7 +6,7 @@ import Foundation
 /// updates / ends the Activity) and the widget extension (which renders it on the
 /// Lock Screen and in the Dynamic Island).
 public struct RestTimerAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
+    public struct ContentState: Codable, Hashable, Sendable {
         /// When the rest ends — the UI uses `Text(timerInterval:)` so it counts down
         /// live without the app pushing every second.
         public var endDate: Date

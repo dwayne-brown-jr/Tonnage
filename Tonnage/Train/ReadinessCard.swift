@@ -28,11 +28,17 @@ struct ReadinessCard: View {
             .frame(width: 52, height: 52)
 
             VStack(alignment: .leading, spacing: 2) {
+                // Both labels shrink rather than hyphenate ("READI-NESS") when Dynamic Type
+                // grows past the width this row has to give.
                 HStack(spacing: DS.Spacing.xs) {
                     Text("READINESS").dsLabel()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                     Text(readiness.headline)
                         .font(.system(.caption, weight: .heavy).width(.condensed))
                         .foregroundStyle(bandColor)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.6)
                     infoButton
                 }
                 Text(today ?? readiness.trainingNote)

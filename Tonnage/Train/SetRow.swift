@@ -25,25 +25,13 @@ struct SetRow: View {
     /// Inserts a drop set right after this one (nil hides the menu item, e.g. cardio).
     var onAddDropSet: (() -> Void)? = nil
 
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var editingNote = false
     @State private var noteDraft = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: DS.Spacing.sm) {
-                Text(label)
-                    .font(DSFont.numberSm)
-                    .foregroundStyle(set.isWarmup ? Color.textTertiary : (set.completed ? Color.accent : Color.textTertiary))
-                    .frame(width: 16)
-
-                ForEach(metrics) { metric in
-                    control(for: metric)
-                }
-
-                Spacer(minLength: 0)
-
-                CompleteButton(completed: set.completed, action: onToggleComplete)
-            }
+            controlsRow
             if set.isAMRAP {
                 amrapLine
             }
@@ -135,6 +123,43 @@ struct SetRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Set note: \(note)")
         .accessibilityHint("Tap to edit")
+    }
+
+    /// The set label, its metric controls, and the complete button. Every DSFont is
+    /// text-style based, so the controls grow with Dynamic Type — at accessibility sizes a
+    /// single row of two steppers plus the RPE chip and the button exceeds the screen width,
+    /// which forces the whole TRAIN page wider than its viewport and clips it on both edges.
+    /// Stack them instead once the text gets that large.
+    @ViewBuilder private var controlsRow: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                HStack(spacing: DS.Spacing.sm) {
+                    setLabel
+                    Spacer(minLength: 0)
+                    CompleteButton(completed: set.completed, action: onToggleComplete)
+                }
+                ForEach(metrics) { metric in
+                    control(for: metric).frame(maxWidth: .infinity)
+                }
+            }
+        } else {
+            HStack(spacing: DS.Spacing.sm) {
+                setLabel
+                ForEach(metrics) { metric in
+                    control(for: metric)
+                }
+                Spacer(minLength: 0)
+                CompleteButton(completed: set.completed, action: onToggleComplete)
+            }
+        }
+    }
+
+    private var setLabel: some View {
+        Text(label)
+            .font(DSFont.numberSm)
+            .foregroundStyle(set.isWarmup ? Color.textTertiary : (set.completed ? Color.accent : Color.textTertiary))
+            .lineLimit(1)
+            .frame(minWidth: 16, alignment: .leading)
     }
 
     /// "LAST WK 225 × 5" under the inputs — tap to fill this set with last week's numbers.
@@ -274,11 +299,17 @@ private struct RPEChip: View {
                     .font(DSFont.numberSm)
                     .monospacedDigit()
                     .foregroundStyle(rpe == nil ? Color.textTertiary : Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                 Text("LEFT")
                     .font(.system(.caption2, weight: .semibold))
                     .foregroundStyle(Color.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
             }
-            .frame(width: 44)
+            // A hard 44pt width broke "LEFT" mid-word once Dynamic Type grew past it.
+            .frame(minWidth: 44)
+            .padding(.horizontal, DS.Spacing.xs)
             .padding(.vertical, DS.Spacing.sm)
             .background(Color.surfaceElevated2, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
             .overlay {

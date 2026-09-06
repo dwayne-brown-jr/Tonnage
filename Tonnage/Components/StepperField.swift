@@ -20,7 +20,7 @@ struct StepperField: View {
             stepButton(systemName: "minus") { adjust(-step) }
 
             valueLabel
-                .frame(minWidth: 52)
+                .frame(minWidth: 34, maxWidth: .infinity)
 
             stepButton(systemName: "plus") { adjust(step) }
         }
@@ -66,6 +66,8 @@ struct StepperField: View {
                     .font(DSFont.number)
                     .monospacedDigit()
                     .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .contentShape(Rectangle())
                     .onTapGesture { beginEditing() }
             }
@@ -75,6 +77,8 @@ struct StepperField: View {
                     .textCase(.uppercase)
                     .kerning(0.5)
                     .foregroundStyle(Color.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
             }
         }
         .padding(.vertical, DS.Spacing.sm)
@@ -88,7 +92,7 @@ struct StepperField: View {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.textSecondary)
-                .frame(width: 34, height: 44)
+                .frame(width: 30, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

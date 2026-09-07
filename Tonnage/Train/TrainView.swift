@@ -496,7 +496,11 @@ struct TrainView: View {
                     // multi-day energy samples (uncatchable NSException).
                     let start = workout.date
                     let end = Calendar.current.isDateInToday(start) ? Date.now : start.addingTimeInterval(45 * 60)
-                    let ok = await health.saveLiftingSession(start: start, end: end)
+                    let meta = LiftSessionMeta(workout: workout, isDeload: week >= 5 || deloadActive)
+                    let ok = await health.saveLiftingSession(start: start, end: end, meta: meta)
+                    // Tell Fuel the session is done either way — the log is real even if
+                    // Health refused the write.
+                    FuelBridge.markSessionCompleted(sessionName: workout.sessionName, at: end)
                     if ok {
                         lastHealthSaveKey = healthSaveKey(workout)
                         withAnimation(DS.spring) { sessionSaved = true; saveFailed = false }
@@ -530,8 +534,38 @@ struct TrainView: View {
                 }
                 .buttonStyle(.plain)
             }
+            if canOpenFuel { fuelMealButton }
         }
     }
+
+    /// Hand-off to the companion nutrition app, right where the session ends. Hidden
+    /// entirely when Tonnage Fuel isn't installed, so it never dead-ends.
+    private var fuelMealButton: some View {
+        Button {
+            openURL(Self.fuelLogURL)
+            Haptics.impact(.light)
+        } label: {
+            Label("Log your post-lift meal in Tonnage Fuel", systemImage: "fork.knife")
+                .font(.system(.subheadline, weight: .bold))
+                .foregroundStyle(Color.accent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, DS.Spacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                        .fill(Color.surfaceElevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                        .strokeBorder(Color.accent.opacity(0.35), lineWidth: DS.Stroke.hairline)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Deep link into Tonnage Fuel's post-workout meal log (declared in
+    /// `LSApplicationQueriesSchemes` so `canOpenURL` can answer honestly).
+    private static let fuelLogURL = URL(string: "tonnagefuel://log?slot=postWorkout")!
+    private var canOpenFuel: Bool { UIApplication.shared.canOpenURL(Self.fuelLogURL) }
 
     private var deloadActive: Bool { deloadOverrideKey == "\(selectedBlock):\(week)" }
 
@@ -569,11 +603,21 @@ struct TrainView: View {
         focusDayType = dayType.rawValue
     }
 
-    /// Push the current block/week/session + week totals to the home-screen widget.
+    /// Push the current block/week/session + week totals to the home-screen widget, and
+    /// mirror the same plan to Tonnage Fuel (`shared.v1.todaySession`) so it can size the
+    /// day's macros. Rest days publish `isLift: false` with an empty session name.
     private func refreshWidget() {
         guard let session else { return }
         WidgetSync.refresh(context: context, block: selectedBlock, week: week,
                            sessionName: session.name, sessionFocus: session.subtitle)
+        FuelBridge.writeTodaySession(
+            sessionName: session.name,
+            focus: session.subtitle,
+            isLift: dayType == .lift,
+            isDeload: week >= 5 || deloadActive,
+            block: selectedBlock,
+            week: week
+        )
     }
 }
 

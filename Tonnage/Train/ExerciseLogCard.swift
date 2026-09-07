@@ -309,6 +309,11 @@ struct ExerciseLogCard: View {
                Calendar.current.isDateInToday(workout.date) {
                 workout.date = .now
             }
+            // First working set of the day = the session is live. Tell Fuel so it can
+            // shift today's macros (idempotent — later sets don't move the timestamp).
+            if isFirstCompletion, let workout = exercise.workout, workout.dayType == .lift {
+                FuelBridge.markSessionStarted(sessionName: workout.sessionName)
+            }
             if !exercise.isCardio && !set.isWarmup {
                 if hasPendingDropSet(after: set) {
                     // A drop set follows immediately — strip weight and go, no rest.

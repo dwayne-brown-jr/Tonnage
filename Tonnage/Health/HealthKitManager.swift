@@ -63,7 +63,7 @@ final class HealthKitManager {
     /// Bumped whenever new read types are added to `readTypes`. Lets us re-prompt users who
     /// authorized an earlier set — HealthKit only surfaces a prompt for the *new* types, so a
     /// re-request is silent for anyone already current.
-    private static let authSchemaVersion = 4   // v4: added Apple Watch sleeping wrist temperature
+    private static let authSchemaVersion = 5   // v5: added dietary energy/protein/carbs/fat (Fuel fallback)
     private var authedSchemaVersion: Int {
         get { UserDefaults.standard.integer(forKey: "hk.authVersion") }
         set { UserDefaults.standard.set(newValue, forKey: "hk.authVersion") }
@@ -90,8 +90,14 @@ final class HealthKitManager {
     private let respiratory = HKQuantityType(.respiratoryRate)
     private let distanceWalkRun = HKQuantityType(.distanceWalkingRunning)   // for importing activity distance
     private let distanceCycle = HKQuantityType(.distanceCycling)
+    // Nutrition — read-only, and only as a FALLBACK for the coach when Tonnage Fuel hasn't
+    // written its own status to the App Group (covers people logging food elsewhere).
+    private let dietaryEnergy = HKQuantityType(.dietaryEnergyConsumed)
+    private let dietaryProtein = HKQuantityType(.dietaryProtein)
+    private let dietaryCarbs = HKQuantityType(.dietaryCarbohydrates)
+    private let dietaryFat = HKQuantityType(.dietaryFatTotal)
 
-    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, bodyTemp, wristTemp, respiratory, distanceWalkRun, distanceCycle, HKObjectType.workoutType()] }
+    private var readTypes: Set<HKObjectType> { [bodyMass, restingHR, heartRate, hrv, activeEnergy, sleep, bodyTemp, wristTemp, respiratory, distanceWalkRun, distanceCycle, dietaryEnergy, dietaryProtein, dietaryCarbs, dietaryFat, HKObjectType.workoutType()] }
     private var shareTypes: Set<HKSampleType> { [HKQuantityType.workoutType(), bodyMass, activeEnergy] }
 
     // MARK: Authorization
@@ -125,6 +131,13 @@ final class HealthKitManager {
         await loadBodyTemp()
         await loadRespiratory()
         await loadTrainedYesterday()
+        publishReadinessToFuel()
+    }
+
+    /// Mirror today's readiness into the App Group so Tonnage Fuel can adjust targets to
+    /// how recovered you are. No-op when there's no score yet.
+    func publishReadinessToFuel() {
+        FuelBridge.writeReadiness(currentReadiness())
     }
 
     /// Today's training-readiness read, built from the latest HealthKit signals.
@@ -418,6 +431,41 @@ final class HealthKitManager {
         trainedYesterday = workouts.contains { $0.duration >= 600 }   // any session ≥ 10 min yesterday
     }
 
+    // MARK: Nutrition
+
+    /// Today's nutrition for the coach: Tonnage Fuel's shared status when it's there,
+    /// otherwise whatever any other nutrition app wrote to HealthKit today. nil when
+    /// neither has anything — the coach then simply says nothing about food.
+    func coachNutrition() async -> CoachNutrition? {
+        if let status = FuelBridge.readFuelStatus() { return CoachNutrition(status) }
+        return await loadTodayNutrition()
+    }
+
+    /// FALLBACK ONLY — today's dietary totals summed from HealthKit. There are no targets
+    /// here (HealthKit doesn't store goals), just what's been eaten.
+    func loadTodayNutrition() async -> CoachNutrition? {
+        guard isAvailable else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: Calendar.current.startOfDay(for: .now), end: nil)
+        let kcal = await sumToday(dietaryEnergy, unit: .kilocalorie(), predicate: predicate)
+        let protein = await sumToday(dietaryProtein, unit: .gram(), predicate: predicate)
+        let carbs = await sumToday(dietaryCarbs, unit: .gram(), predicate: predicate)
+        let fat = await sumToday(dietaryFat, unit: .gram(), predicate: predicate)
+        guard kcal != nil || protein != nil || carbs != nil || fat != nil else { return nil }
+        return CoachNutrition(caloriesConsumed: kcal, proteinConsumedG: protein,
+                              carbsConsumedG: carbs, fatConsumedG: fat,
+                              source: "Apple Health")
+    }
+
+    private func sumToday(_ type: HKQuantityType, unit: HKUnit, predicate: NSPredicate) async -> Double? {
+        let descriptor = HKStatisticsQueryDescriptor(
+            predicate: .quantitySample(type: type, predicate: predicate),
+            options: .cumulativeSum
+        )
+        guard let stats = try? await descriptor.result(for: store),
+              let sum = stats.sumQuantity() else { return nil }
+        return sum.doubleValue(for: unit)
+    }
+
     // MARK: Recovery trend series (for the Recovery screen)
 
     /// Daily HRV / resting-HR / sleep over the last `days`, bucketed by calendar day.
@@ -576,7 +624,8 @@ final class HealthKitManager {
     /// True only if the workout actually reached Health — returns false when write access
     /// was denied or the write failed, so callers don't claim a save that didn't happen.
     @discardableResult
-    func saveWorkout(activityType: HKWorkoutActivityType, start: Date, end: Date, energyKcal: Double?) async -> Bool {
+    func saveWorkout(activityType: HKWorkoutActivityType, start: Date, end: Date, energyKcal: Double?,
+                     metadata: [String: Any]? = nil) async -> Bool {
         guard isAvailable, end > start else { return false }
         // HealthKit hard-caps sample durations (4 days for active energy) and raises an
         // uncatchable NSException past that — clamp so no caller can ever trip it.
@@ -588,6 +637,9 @@ final class HealthKitManager {
         let builder = HKWorkoutBuilder(healthStore: store, configuration: configuration, device: .local())
         do {
             try await builder.beginCollection(at: start)
+            if let metadata, !metadata.isEmpty {
+                try await builder.addMetadata(metadata)
+            }
             if let energyKcal, energyKcal > 0 {
                 let energy = HKQuantity(unit: .kilocalorie(), doubleValue: energyKcal)
                 let sample = HKQuantitySample(type: activeEnergy, quantity: energy, start: start, end: end)
@@ -604,12 +656,24 @@ final class HealthKitManager {
     /// Convenience for a finished lifting session. Skips the write if the Watch already
     /// logged this session to Health (so the watch + phone don't double-write), reporting
     /// success either way since the workout IS in Health.
+    ///
+    /// `meta` stamps the workout with the session's own numbers (name, tonnage, sets, reps,
+    /// block/week, deload, top-set RPE) under `HealthMetadataKeys` — Tonnage Fuel reads them
+    /// straight off the HealthKit workout to size the post-lift meal.
     @discardableResult
-    func saveLiftingSession(start: Date, end: Date) async -> Bool {
+    func saveLiftingSession(start: Date, end: Date, meta: LiftSessionMeta? = nil) async -> Bool {
         if await hasOwnWorkout(type: .traditionalStrengthTraining, from: start, to: end) { return true }
         let minutes = max(1, end.timeIntervalSince(start) / 60)
         return await saveWorkout(activityType: .traditionalStrengthTraining, start: start, end: end,
-                                 energyKcal: minutes * 5)   // rough estimate
+                                 energyKcal: minutes * 5,   // rough estimate
+                                 metadata: Self.liftMetadata(meta))
+    }
+
+    /// Brand name on every Tonnage lift workout, plus the session's custom keys when known.
+    static func liftMetadata(_ meta: LiftSessionMeta?) -> [String: Any] {
+        var md: [String: Any] = [HKMetadataKeyWorkoutBrandName: HealthMetadataKeys.brandName]
+        if let meta { md.merge(meta.metadata) { _, new in new } }
+        return md
     }
 
     /// Convenience for a logged MOVE activity.
@@ -641,14 +705,31 @@ final class HealthKitManager {
 
     // MARK: Import external workouts
 
+    /// Why an import finished with nothing to show. HealthKit never reveals read
+    /// authorization, so a denied read and an empty Health store look identical from a
+    /// query — but if we can't see even the workouts Tonnage itself wrote, read is off.
+    enum ImportOutcome: Sendable, Equatable {
+        case imported(Int)
+        case nothingNew
+        /// The query returned no workouts whatsoever — almost certainly denied read access.
+        case noWorkoutsVisible
+        case unavailable
+    }
+
+
     /// Pulls workouts logged by OTHER apps (Apple Workout app, etc.) from Health and
     /// records them as MOVE activities. Skips Tonnage's own workouts, strength work
     /// (that lives in TRAIN), anything already imported (by HK UUID), and anything that
     /// looks like a session the user already logged by hand (same kind, near the same
     /// time). Returns the number newly imported so callers can give feedback.
+    /// `forgettingSeen` clears the imported-UUID memory first. An earlier build marked
+    /// workouts as seen even when the save failed, permanently suppressing them; this is the
+    /// way back for anyone whose list was poisoned before that was fixed.
     @discardableResult
-    func importExternalWorkouts(into context: ModelContext) async -> Int {
-        guard isAvailable, hasRequested else { return 0 }
+    func importExternalWorkouts(into context: ModelContext,
+                                forgettingSeen: Bool = false) async -> ImportOutcome {
+        guard isAvailable, hasRequested else { return .unavailable }
+        if forgettingSeen { UserDefaults.standard.removeObject(forKey: "hk.importedWorkouts") }
         // 90-day window (vs 30) so a fresh install backfills recent history, with a higher
         // cap for heavy users — paired with the save-gated "seen" set below so nothing is
         // silently dropped and never retried.
@@ -659,10 +740,13 @@ final class HealthKitManager {
             sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)],
             limit: 200
         )
-        guard let workouts = try? await descriptor.result(for: store) else { return 0 }
+        guard let workouts = try? await descriptor.result(for: store) else { return .unavailable }
+        // Not even our own strength sessions came back — read access is denied, not empty.
+        if workouts.isEmpty { return .noWorkoutsVisible }
 
         let key = "hk.importedWorkouts"
-        let alreadySeen = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        let alreadySeen = forgettingSeen ? Set<String>()
+                                         : Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
 
         // Existing MOVE activities in range — used to skip a workout the user already
         // logged manually (the manual entry mirrors to Health under our own bundle ID and
@@ -728,11 +812,11 @@ final class HealthKitManager {
                 try context.save()
             } catch {
                 context.rollback()
-                return 0
+                return .unavailable
             }
         }
         UserDefaults.standard.set(Array(alreadySeen.union(newlySeen)), forKey: key)
-        return inserted.count
+        return inserted.isEmpty ? .nothingNew : .imported(inserted.count)
     }
 
     /// Lifting workouts belong in TRAIN (logged with sets), never imported into MOVE.

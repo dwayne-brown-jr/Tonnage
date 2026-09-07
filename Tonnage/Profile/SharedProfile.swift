@@ -14,7 +14,9 @@ enum SharedProfile {
         static let updatedAt = "shared.updatedAt"
     }
 
-    /// Write a starting point + its recommended Fuel goal to the shared store.
+    /// Write a starting point + its recommended Fuel goal to the shared store, and publish
+    /// the full `shared.v1.profile` JSON record alongside it (age / sex / height / weight /
+    /// goal / experience / days per week) so Fuel can seed macro defaults without re-asking.
     static func write(_ startingPoint: StartingPoint) {
         guard let store else { return }
         store.set(startingPoint.rawValue, forKey: Key.startingPoint)
@@ -24,6 +26,12 @@ enum SharedProfile {
             store.removeObject(forKey: Key.recommendedGoal)
         }
         store.set(Date().timeIntervalSince1970, forKey: Key.updatedAt)
+
+        // The caller may have just written the starting point to @AppStorage; take the
+        // passed value as authoritative rather than racing the defaults read.
+        var profile = ProfileStore.current
+        profile.startingPoint = startingPoint
+        FuelBridge.writeProfile(profile, defaults: store)
     }
 
     /// Mirror the current profile's starting point into the shared store. Called at launch

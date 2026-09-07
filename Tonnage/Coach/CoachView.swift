@@ -207,10 +207,10 @@ struct CoachView: View {
         let toSend = text
         input = ""
         inputFocused = false
-        Task { await vm.send(toSend, system: systemContext(), model: model) }
+        Task { await vm.send(toSend, system: await systemContext(), model: model) }
     }
 
-    private func systemContext() -> String {
+    private func systemContext() async -> String {
         let bw = health.bodyweight
         let recovery = CoachRecovery(
             bodyweightLb: bw.last?.pounds,
@@ -223,6 +223,7 @@ struct CoachView: View {
         let context = CoachContext.build(program: programs.first, currentWeek: focusWeek,
                                          recentWorkouts: workouts, activities: activities,
                                          recovery: recovery, readiness: health.currentReadiness(),
+                                         nutrition: await health.coachNutrition(),
                                          focusSession: focusSession.isEmpty ? nil : focusSession,
                                          focusDay: focusDay,
                                          maxWorkouts: 12, maxActivities: 8)

@@ -44,6 +44,9 @@ struct TrainView: View {
     @State private var showPlanBlock = false
     @State private var showReplanBlock = false
     @State private var confirmNewBlock = false
+    /// Days-since-last-lift the user has already answered the welcome-back card for, so it
+    /// asks once per return rather than nagging every launch. Reset by a longer gap.
+    @AppStorage("train.layoffAcknowledgedDays") private var layoffAcknowledgedDays = 0
     @State private var shareItem: ShareImageItem?
 
     private var program: Program? { programs.first }
@@ -191,6 +194,9 @@ struct TrainView: View {
 
     @ViewBuilder private var contentStack: some View {
         VStack(spacing: DS.Spacing.lg) {
+            if let layoff = store.layoff, layoff.isSignificant, !layoffAcknowledged {
+                welcomeBackCard(layoff)
+            }
             // Always shown — even with no data it reads as a "Connect Apple Health"
             // prompt and keeps the Recovery screen discoverable.
             ReadinessCard(readiness: readiness,
@@ -236,6 +242,79 @@ struct TrainView: View {
             // hidden behind the block dropdown.
             if dayType == .lift && week >= 5 { planNextBlockButton }
         }
+    }
+
+    /// True once the user has answered the card for this return. A materially longer gap
+    /// (another two weeks away) asks again rather than staying silent forever.
+    private var layoffAcknowledged: Bool {
+        guard let layoff = store.layoff else { return true }
+        return layoffAcknowledgedDays > 0 && layoff.days < layoffAcknowledgedDays + 14
+    }
+
+    /// Shown when you open TRAIN after real time off. The suggested loads have already been
+    /// scaled down by then; this explains why, and offers the clean restart — without forcing
+    /// it, since wiping someone's block for them would read as the app deleting their progress.
+    private func welcomeBackCard(_ layoff: Layoff) -> some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            HStack(spacing: DS.Spacing.sm) {
+                Image(systemName: "hand.wave.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color.accent)
+                Text("WELCOME BACK").dsLabel()
+                Spacer(minLength: 0)
+            }
+
+            Text("It's been \(layoff.summary)")
+                .font(DSFont.title)
+                .foregroundStyle(Color.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Today's suggested loads are set to about \(layoff.loadPercent)% of where you left off — enough to rebuild without wrecking you. Start a fresh block to reset the plan, or pick up where you were.")
+                .font(.system(.subheadline))
+                .foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: DS.Spacing.sm) {
+                Button {
+                    Haptics.success()
+                    layoffAcknowledgedDays = layoff.days
+                    startNewBlock()
+                } label: {
+                    Text("Start a Fresh Block")
+                        .font(.system(.subheadline, weight: .bold))
+                        .foregroundStyle(Color.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, DS.Spacing.sm)
+                        .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    Haptics.selection()
+                    withAnimation(DS.spring) { layoffAcknowledgedDays = layoff.days }
+                } label: {
+                    Text("Pick Up Where I Left Off")
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, DS.Spacing.sm)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("Your history, PRs and charts are kept either way.")
+                .font(.system(.caption))
+                .foregroundStyle(Color.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.accent.opacity(0.35), lineWidth: 1))
+        .transition(.opacity.combined(with: .move(edge: .top)))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Welcome back. It has been \(layoff.summary). Loads reduced to about \(layoff.loadPercent) percent.")
     }
 
     /// Early-deload state — visible, with an obvious way out.

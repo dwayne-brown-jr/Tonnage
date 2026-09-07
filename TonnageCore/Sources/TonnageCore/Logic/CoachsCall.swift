@@ -5,11 +5,15 @@ public struct LastTopSet: Sendable, Equatable {
     public let weight: Double
     public let reps: Int
     public let rpe: Double?
+    /// The day this set was logged. Without it the engine can't tell a set from last week
+    /// apart from one from last spring, and would hand a returning lifter pre-layoff loads.
+    public let date: Date?
 
-    public init(weight: Double, reps: Int, rpe: Double?) {
+    public init(weight: Double, reps: Int, rpe: Double?, date: Date? = nil) {
         self.weight = weight
         self.reps = reps
         self.rpe = rpe
+        self.date = date
     }
 }
 
@@ -57,13 +61,28 @@ public struct NextSetCue: Sendable, Equatable {
 public enum CoachEngine {
 
     public static func call(week: Int, last: LastTopSet?, repRange: String, isCardio: Bool,
-                            holdProgression: Bool = false, forceDeload: Bool = false) -> CoachsCall {
+                            holdProgression: Bool = false, forceDeload: Bool = false,
+                            layoff: Layoff? = nil) -> CoachsCall {
         if isCardio {
             return CoachsCall(headline: "Easy effort — a finisher, not a test.",
                               suggestedWeight: nil, suggestedReps: nil, emphasis: .neutral)
         }
 
         let lowReps = lowRep(of: repRange)
+
+        // Coming back from real time off overrides the week's normal progression — the last
+        // top set is stale, so where you are in the block matters less than how long you've
+        // been gone. Scales the load rather than discarding it, and never suggests more than
+        // an explicit deload would.
+        if let layoff, layoff.isSignificant, let last {
+            let multiplier = forceDeload ? min(layoff.loadMultiplier, 0.6) : layoff.loadMultiplier
+            let w = roundToStep(last.weight * multiplier, step: 5)
+            return CoachsCall(
+                headline: "Back after \(layoff.summary) — start near \(fmt(w)) lb (~\(Int((multiplier * 100).rounded()))%) and rebuild.",
+                suggestedWeight: w,
+                suggestedReps: last.reps,
+                emphasis: .deload)
+        }
 
         // Early deload (readiness-triggered or manual) — treat this week like W5
         // regardless of where the calendar says you are.

@@ -1,4 +1,5 @@
 import SwiftUI
+import LinkPresentation
 import UIKit
 import TonnageCore
 
@@ -29,6 +30,38 @@ struct ShareSheet: UIViewControllerRepresentable {
 struct ShareImageItem: Identifiable {
     let id = UUID()
     let image: UIImage
+    /// Shown as the share sheet's title, e.g. "Pull B · Aug 21".
+    var title: String = "Workout"
+
+    /// A bare `UIImage` gives the share sheet no preview metadata, so its header renders an
+    /// empty placeholder instead of the card. This supplies the title + thumbnail it wants.
+    var activityItem: Any { WorkoutImageSource(image: image, title: title) }
+}
+
+final class WorkoutImageSource: NSObject, UIActivityItemSource {
+    private let image: UIImage
+    private let title: String
+
+    init(image: UIImage, title: String) {
+        self.image = image
+        self.title = title
+        super.init()
+    }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { image }
+
+    func activityViewController(_ controller: UIActivityViewController,
+                                itemForActivityType type: UIActivity.ActivityType?) -> Any? { image }
+
+    func activityViewController(_ controller: UIActivityViewController,
+                                subjectForActivityType type: UIActivity.ActivityType?) -> String { title }
+
+    func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = title
+        metadata.imageProvider = NSItemProvider(object: image)
+        return metadata
+    }
 }
 
 // MARK: - Cards
@@ -158,6 +191,144 @@ struct BlockShareCard: View {
             .strokeBorder(Color.accent.opacity(0.3), lineWidth: 1))
         .padding(16)
         .background(Color.surface)
+    }
+}
+
+/// A week recap — "here's my week."
+struct WeekShareCard: View {
+    let block: Int
+    let summary: Analytics.WeekSummary
+    let prs: [PRMoment]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("TONNAGE")
+                    .font(.system(.caption, weight: .heavy).width(.condensed)).kerning(2)
+                    .foregroundStyle(Color.accent)
+                Spacer()
+                Text("WEEKLY RECAP")
+                    .font(.system(.caption2, weight: .bold)).kerning(1).foregroundStyle(Color.textTertiary)
+            }
+            .padding(.bottom, 16)
+
+            Text("WEEK \(String(format: "%02d", summary.week))")
+                .font(.system(size: 40, weight: .heavy).width(.condensed))
+                .foregroundStyle(Color.textPrimary)
+            Text("BLOCK \(String(format: "%02d", block))")
+                .font(.system(.caption, weight: .bold)).kerning(1)
+                .foregroundStyle(Color.textSecondary)
+                .padding(.bottom, 20)
+
+            HStack {
+                ShareStat(value: "\(summary.sessions)", label: "SESSIONS")
+                Spacer()
+                ShareStat(value: "\(summary.sets)", label: "HARD SETS")
+                Spacer()
+                ShareStat(value: Int(summary.volume).formatted(), label: "VOLUME · LB")
+            }
+            .padding(.bottom, prs.isEmpty ? 0 : 20)
+
+            if !prs.isEmpty {
+                Rectangle().fill(Color.hairline).frame(height: 1).padding(.bottom, 14)
+                Text("PRs THIS WEEK")
+                    .font(.system(.caption2, weight: .bold)).kerning(1).foregroundStyle(Color.textTertiary)
+                    .padding(.bottom, 8)
+                VStack(spacing: 9) {
+                    ForEach(Array(prs.prefix(3))) { pr in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(pr.exerciseName)
+                                .font(.system(.subheadline, weight: .semibold))
+                                .foregroundStyle(Color.textPrimary).lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text("e1RM \(CoachEngine.fmt(pr.estimatedOneRM.rounded()))")
+                                .font(.system(.subheadline, weight: .bold).monospacedDigit())
+                                .foregroundStyle(Color.accent)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(28)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .strokeBorder(Color.accent.opacity(0.3), lineWidth: 1))
+        .padding(16)
+        .background(Color.surface)
+    }
+}
+
+/// A single cardio / active-rest session — "here's my move." Mirrors WorkoutShareCard.
+struct ActivityShareCard: View {
+    let activity: Activity
+
+    private var stats: [(value: String, label: String)] {
+        var s: [(value: String, label: String)] = [(durationText, "DURATION")]
+        if let d = activity.distanceMiles, d > 0 { s.append((CoachEngine.fmt(d), "DISTANCE · MI")) }
+        if let c = activity.activeCalories, c > 0 { s.append(("\(c)", "ACTIVE CAL")) }
+        if s.count < 3, let f = activity.flights, f > 0 { s.append(("\(f)", "FLIGHTS")) }
+        if s.count < 3, let p = paceText { s.append((p, "PACE · /MI")) }
+        return Array(s.prefix(3))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("TONNAGE")
+                    .font(.system(.caption, weight: .heavy).width(.condensed)).kerning(2)
+                    .foregroundStyle(Color.accent)
+                Spacer()
+                Text(activity.date.formatted(.dateTime.month(.abbreviated).day().year()))
+                    .font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
+            }
+            .padding(.bottom, 18)
+
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Color.accent.opacity(0.15))
+                    Image(systemName: activity.kind.systemImage)
+                        .font(.system(size: 22, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color.accent)
+                }
+                .frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(activity.name)
+                        .font(.system(size: 30, weight: .heavy).width(.condensed))
+                        .foregroundStyle(Color.textPrimary).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(activity.kind.label.uppercased())
+                        .font(.system(.caption, weight: .bold)).kerning(1)
+                        .foregroundStyle(Color.textSecondary)
+                }
+            }
+            .padding(.bottom, 20)
+
+            Rectangle().fill(Color.hairline).frame(height: 1)
+
+            HStack {
+                ForEach(Array(stats.enumerated()), id: \.offset) { i, s in
+                    if i > 0 { Spacer() }
+                    ShareStat(value: s.value, label: s.label)
+                }
+            }
+            .padding(.top, 16)
+        }
+        .padding(28)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .strokeBorder(Color.accent.opacity(0.3), lineWidth: 1))
+        .padding(16)
+        .background(Color.surface)
+    }
+
+    private var durationText: String {
+        let m = activity.durationMinutes
+        return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
+    }
+    private var paceText: String? {
+        guard let d = activity.distanceMiles, d > 0, activity.durationMinutes > 0 else { return nil }
+        let secPerMile = (Double(activity.durationMinutes) * 60) / d
+        return String(format: "%d'%02d\"", Int(secPerMile) / 60, Int(secPerMile) % 60)
     }
 }
 

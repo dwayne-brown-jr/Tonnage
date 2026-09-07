@@ -114,6 +114,12 @@ struct CoachView: View {
                      : "Add your Anthropic API key in Settings, then ask away.")
                     .font(DSFont.callout).foregroundStyle(Color.textSecondary).multilineTextAlignment(.center)
             }
+            if vm.usingSharedKey {
+                Text(sharedKeyNote)
+                    .font(DSFont.caption).foregroundStyle(Color.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if vm.hasKey {
                 VStack(spacing: DS.Spacing.sm) {
                     ForEach(suggestions, id: \.self) { s in
@@ -134,9 +140,21 @@ struct CoachView: View {
     }
 
     private func errorBanner(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: DS.Spacing.sm) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.danger)
-            Text(text).font(DSFont.caption).foregroundStyle(Color.textSecondary)
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            HStack(alignment: .top, spacing: DS.Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.danger)
+                Text(text).font(DSFont.caption).foregroundStyle(Color.textSecondary)
+            }
+            // Don't leave a failed turn stranded — let them re-send the last message.
+            if vm.canRetry {
+                Button {
+                    Task { await vm.retryLast(system: systemContext(), model: model) }
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                        .font(.system(.caption, weight: .bold)).foregroundStyle(Color.accent)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(DS.Spacing.md)
@@ -171,6 +189,16 @@ struct CoachView: View {
         .padding(.vertical, DS.Spacing.md)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(Color.hairline).frame(height: DS.Stroke.hairline) }
+    }
+
+    /// Shared-key allowance line. The proxy reports the remaining count after the first
+    /// call; until then we just note that a daily limit applies.
+    private var sharedKeyNote: String {
+        let tail = " · add your own key in Settings for unlimited"
+        guard let n = vm.quotaRemaining else {
+            return "Free Coach messages are limited daily on the shared key" + tail
+        }
+        return (n > 0 ? "\(n) free Coach messages left today" : "Out of free Coach messages today") + tail
     }
 
     private var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !vm.isSending }

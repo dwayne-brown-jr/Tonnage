@@ -5,9 +5,14 @@ import TonnageCore
 /// MOVE: quick-add active-rest / cardio logging + recent history.
 struct MoveView: View {
     @Environment(\.modelContext) private var context
+    @Environment(HealthKitManager.self) private var health
     @Query(sort: \Activity.date, order: .reverse) private var activities: [Activity]
 
     @State private var entryKind: ActivityKind?
+    @State private var importing = false
+    @State private var importMessage: String?
+    @State private var pendingDelete: Activity?
+    @State private var selectedActivity: Activity?
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     private let quickKinds: [ActivityKind] = [
@@ -21,6 +26,7 @@ struct MoveView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.xl) {
                         quickAdd
+                        if health.hasRequested { healthImport }
                         recent
                     }
                     .padding(DS.Spacing.lg)
@@ -31,6 +37,18 @@ struct MoveView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $entryKind) { kind in
                 ActivityEntrySheet(kind: kind)
+            }
+            .sheet(item: $selectedActivity) { activity in
+                ActivityDetailSheet(activity: activity)
+            }
+            .confirmationDialog("Delete this activity?",
+                                isPresented: Binding(get: { pendingDelete != nil },
+                                                     set: { if !$0 { pendingDelete = nil } }),
+                                presenting: pendingDelete) { activity in
+                Button("Delete", role: .destructive) {
+                    context.delete(activity); context.saveOrReport(); Haptics.warning()
+                }
+                Button("Cancel", role: .cancel) {}
             }
         }
         .tint(.accent)
@@ -74,6 +92,50 @@ struct MoveView: View {
         }
     }
 
+    private var healthImport: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Button {
+                guard !importing else { return }
+                importing = true
+                importMessage = nil
+                Task {
+                    let n = await health.importExternalWorkouts(into: context)
+                    importMessage = n > 0
+                        ? "Imported \(n) workout\(n == 1 ? "" : "s") from Apple Health."
+                        : "No new cardio found in Apple Health."
+                    importing = false
+                    Haptics.success()
+                }
+            } label: {
+                HStack(spacing: DS.Spacing.sm) {
+                    if importing {
+                        ProgressView().controlSize(.small).tint(Color.textSecondary)
+                    } else {
+                        Image(systemName: "arrow.down.heart")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.accent)
+                    }
+                    Text("Import from Apple Health")
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, DS.Spacing.md)
+                .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                        .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(importing)
+
+            Text(importMessage ?? "Pulls cardio (walks, runs, rides, stairs) from Apple Fitness and other apps. Strength workouts stay in TRAIN.")
+                .font(.system(.caption2))
+                .foregroundStyle(Color.textTertiary)
+        }
+    }
+
     @ViewBuilder private var recent: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             Text("Recent").dsLabel()
@@ -85,10 +147,17 @@ struct MoveView: View {
             } else {
                 ForEach(activities) { activity in
                     ActivityRow(activity: activity)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            Haptics.selection()
+                            selectedActivity = activity
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Opens activity details")
                         .contextMenu {
                             Button(role: .destructive) {
-                                context.delete(activity)
-                                try? context.save()
+                                pendingDelete = activity
                             } label: { Label("Delete", systemImage: "trash") }
                         }
                 }
@@ -120,6 +189,9 @@ private struct ActivityRow: View {
                 .font(DSFont.numberSm)
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.trailing)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.textTertiary)
         }
         .padding(DS.Spacing.md)
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
@@ -137,5 +209,6 @@ private struct ActivityRow: View {
 #Preview("Move") {
     MoveView()
         .modelContainer(TonnageStore.makeContainer(inMemory: true))
+        .environment(HealthKitManager())
         .preferredColorScheme(.dark)
 }

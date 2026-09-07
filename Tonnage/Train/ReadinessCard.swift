@@ -6,6 +6,9 @@ import TonnageCore
 /// chevron signals it drills in.
 struct ReadinessCard: View {
     let readiness: Readiness
+    /// Optional session-aware "Today" verdict — when set, it replaces the generic band note
+    /// so the card reads as an actionable daily plan (e.g. "Primed — go hard on Lower A").
+    var today: String? = nil
     /// Tapping the card body opens the Recovery screen (handled by the parent).
     var onOpen: () -> Void = {}
     @State private var showInfo = false
@@ -25,14 +28,20 @@ struct ReadinessCard: View {
             .frame(width: 52, height: 52)
 
             VStack(alignment: .leading, spacing: 2) {
+                // Both labels shrink rather than hyphenate ("READI-NESS") when Dynamic Type
+                // grows past the width this row has to give.
                 HStack(spacing: DS.Spacing.xs) {
                     Text("READINESS").dsLabel()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                     Text(readiness.headline)
                         .font(.system(.caption, weight: .heavy).width(.condensed))
                         .foregroundStyle(bandColor)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.6)
                     infoButton
                 }
-                Text(readiness.trainingNote)
+                Text(today ?? readiness.trainingNote)
                     .font(DSFont.callout)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -54,7 +63,7 @@ struct ReadinessCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpen() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Readiness \(readiness.score.map(String.init) ?? "unavailable"), \(readiness.headline). \(readiness.trainingNote)")
+        .accessibilityLabel("Readiness \(readiness.score.map(String.init) ?? "unavailable"), \(readiness.headline). \(today ?? readiness.trainingNote)")
         .accessibilityHint("Opens recovery details")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
@@ -101,7 +110,7 @@ private struct ReadinessInfoPopover: View {
                 Text("Readiness")
                     .font(DSFont.title)
                     .foregroundStyle(Color.textPrimary)
-                Text("A 0–100 read of how recovered you are today — your HRV, resting heart rate, and sleep measured against your own baselines. It steers how hard to train, and isn't a medical score.")
+                Text("A 0–100 read of how recovered you are today — your HRV, resting heart rate, and sleep (plus body temperature and breathing rate if you wear a ring) measured against your own baselines. It steers how hard to train, and isn't a medical score.")
                     .font(DSFont.callout)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

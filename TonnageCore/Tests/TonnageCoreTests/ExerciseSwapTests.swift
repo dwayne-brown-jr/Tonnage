@@ -56,4 +56,26 @@ struct ExerciseSwapTests {
             }
         }
     }
+
+    @Test("Every quick-add suggestion resolves directions + a muscle group")
+    func quickAddIsComplete() {
+        #expect(!ExerciseLibrary.quickAddSuggestions.isEmpty)
+        for name in ExerciseLibrary.quickAddSuggestions {
+            #expect(ExerciseLibrary.directions(for: name) != nil, "no directions for \(name)")
+            #expect(ExerciseLibrary.muscleGroup(for: name) != nil, "no muscle group for \(name)")
+        }
+    }
+
+    @Test("Calisthenics are recognized: muscle group, compound flag, strength metrics")
+    func calisthenics() {
+        #expect(ExerciseLibrary.muscleGroup(for: "Push-up") == .chest)
+        #expect(ExerciseLibrary.muscleGroup(for: "Chin-up") == .back)
+        #expect(ExerciseLibrary.muscleGroup(for: "Inverted Row") == .back)
+        #expect(ExerciseLibrary.muscleGroup(for: "Pike Push-up") == .shoulders)
+        for n in ["Push-up", "Chin-up", "Bodyweight Dip", "Inverted Row", "Pike Push-up", "Bodyweight Squat"] {
+            #expect(ExerciseLibrary.isCompound(n), "\(n) should be compound")
+        }
+        // Bodyweight moves log like any lift: weight (0 = bodyweight) + reps + effort.
+        #expect(ExerciseLibrary.metrics(for: "Push-up", isCardio: false) == [.weight, .reps, .rpe])
+    }
 }

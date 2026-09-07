@@ -54,4 +54,94 @@ struct AnalyticsTests {
         #expect(Analytics.sessionsLogged(w) == 2)
         #expect(Analytics.totalVolume(w) == 3010)   // 1660 + 1350
     }
+
+    @Test("Week summary totals a single week")
+    func weekSummary() {
+        let s = Analytics.weekSummary(sampleWorkouts(), week: 1)
+        #expect(s.sessions == 1)
+        #expect(s.sets == 3)        // 2 bench + 1 curl
+        #expect(s.volume == 1660)
+    }
+
+    // MARK: Sets per muscle
+
+    /// Builds an exercise with `done` completed sets + `pending` incomplete sets.
+    private func exercise(_ name: String, isCardio: Bool = false, done: Int, pending: Int = 0, order: Int) -> LoggedExercise {
+        let ex = LoggedExercise(name: name, isCardio: isCardio, sortOrder: order)
+        var sets: [LoggedSet] = (0..<done).map { LoggedSet(weight: 100, reps: 8, completed: true, sortOrder: $0) }
+        sets += (0..<pending).map { LoggedSet(weight: 100, reps: 8, completed: false, sortOrder: done + $0) }
+        ex.sets = sets
+        return ex
+    }
+
+    @Test("Sets per muscle counts hard sets, maps by name, excludes cardio/incomplete, buckets unknowns")
+    func setsPerMuscle() {
+        let w1 = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "Full Body")
+        w1.exercises = [
+            exercise("Barbell Bench Press", done: 3, pending: 1, order: 0),  // chest 3 (pending ignored)
+            exercise("Barbell Back Squat", done: 2, order: 1),               // quads 2
+            exercise("Mystery Move", done: 2, order: 2),                     // Other 2 (unknown name)
+            exercise("Bike intervals", isCardio: true, done: 5, order: 3)    // excluded (cardio)
+        ]
+        let rest = LoggedWorkout(weekNumber: 1, dayType: .fullRest, sessionName: "Rest Day")
+
+        let result = Analytics.setsPerMuscle([w1, rest])
+        // Ordered by muscle enum (chest before quads), Other last; cardio absent.
+        #expect(result.map(\.label) == ["Chest", "Quads", "Other"])
+        #expect(result.map(\.sets) == [3, 2, 2])
+        #expect(!result.contains { $0.label == "Cardio" })
+    }
+
+    @Test("Warm-up sets are excluded from volume, hard-set counts, top set, and per-muscle")
+    func warmupsExcluded() {
+        let ex = LoggedExercise(name: "Barbell Bench Press", isCompound: true, sortOrder: 0)
+        ex.sets = [
+            LoggedSet(weight: 95, reps: 5, completed: true, isWarmup: true, sortOrder: 0),    // warm-up (heaviest by weight? no)
+            LoggedSet(weight: 225, reps: 5, completed: true, isWarmup: true, sortOrder: 1),   // heavy warm-up — must NOT be top set
+            LoggedSet(weight: 185, reps: 5, completed: true, sortOrder: 2),                    // working
+            LoggedSet(weight: 185, reps: 5, completed: true, sortOrder: 3)                     // working
+        ]
+        let w = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "Upper")
+        w.exercises = [ex]
+
+        #expect(ex.completedSetCount == 2)                                   // only working sets
+        #expect(ex.topSet?.weight == 185)                                    // not the 225 warm-up
+        #expect(w.totalVolume == 185 * 5 * 2)                                // warm-ups contribute 0
+        #expect(Analytics.setsPerMuscle([w]).first?.sets == 2)               // chest = 2 hard sets
+        #expect(PersonalRecords.recentPRs(in: [w]).isEmpty)                  // warm-ups don't establish/beat PRs
+    }
+
+    @Test("Latest logged week ignores empty + rest workouts")
+    func latestLoggedWeek() {
+        let w1 = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "A")
+        w1.exercises = [exercise("Barbell Bench Press", done: 2, order: 0)]
+        let w3empty = LoggedWorkout(weekNumber: 3, dayType: .lift, sessionName: "A")   // no sets
+        let w4rest = LoggedWorkout(weekNumber: 4, dayType: .fullRest, sessionName: "Rest Day")
+
+        #expect(Analytics.latestLoggedWeek([w1, w3empty, w4rest]) == 1)
+        #expect(Analytics.latestLoggedWeek([w3empty, w4rest]) == nil)
+    }
+}
+
+@Suite("Linear projection")
+struct LinearProjectionTests {
+    @Test("Projects a steady +5/week trend one week out")
+    func steadyTrend() {
+        let points = [(x: 1.0, y: 200.0), (x: 2.0, y: 205.0), (x: 3.0, y: 210.0)]
+        let projected = Analytics.linearProjection(points: points, toX: 4)
+        #expect(projected != nil)
+        #expect(abs((projected ?? 0) - 215) < 0.001)
+    }
+
+    @Test("Needs at least two points and a real x spread")
+    func degenerateInputs() {
+        #expect(Analytics.linearProjection(points: [(x: 1, y: 200)], toX: 2) == nil)
+        #expect(Analytics.linearProjection(points: [(x: 2, y: 200), (x: 2, y: 210)], toX: 3) == nil)
+    }
+
+    @Test("A falling trend never projects to zero or below")
+    func neverNegative() {
+        let points = [(x: 1.0, y: 100.0), (x: 2.0, y: 10.0)]
+        #expect(Analytics.linearProjection(points: points, toX: 3) == nil)
+    }
 }

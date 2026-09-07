@@ -46,10 +46,11 @@ struct EditExerciseSheet: View {
         _isCompound = State(initialValue: exercise?.isCompound ?? false)
         _isCardio = State(initialValue: exercise?.isCardio ?? false)
         _sets = State(initialValue: Double(exercise?.prescribedSets ?? 3))
-        _repRange = State(initialValue: exercise?.repRange ?? "")
+        // Sensible defaults for a fresh add so a quick-add tap → "Add" gives 3×8-12 @ RPE 8.
+        _repRange = State(initialValue: exercise?.repRange ?? (mode == .addCustom ? "8-12" : ""))
         // Keep the slot's effort target on a swap — you're changing the movement, not the
         // set/rep scheme. Notes are movement-specific, so those reset.
-        _rpeTarget = State(initialValue: exercise?.rpeTarget ?? "")
+        _rpeTarget = State(initialValue: exercise?.rpeTarget ?? (mode == .addCustom ? "8" : ""))
         _notes = State(initialValue: mode == .swap ? "" : (exercise?.prescriptionNotes ?? ""))
     }
 
@@ -64,7 +65,9 @@ struct EditExerciseSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: DS.Spacing.lg) {
                         if mode != .edit { revertNote }
+                        if mode == .swap && hasLoggedSets { swapWarning }
                         if mode == .swap { swapSuggestions; coachSwapSection }
+                        if mode == .addCustom { quickAddSuggestions }
                         textField("Exercise", text: $name, placeholder: "e.g. Incline DB Press")
                         typeToggles
                         if !isCardio {
@@ -108,10 +111,34 @@ struct EditExerciseSheet: View {
             .foregroundStyle(Color.textTertiary)
     }
 
+    /// A swap rebuilds the slot's sets, so any logged work for it is lost — warn first.
+    private var hasLoggedSets: Bool { (exercise?.sets ?? []).contains { $0.completed && !$0.isWarmup } }
+
+    private var swapWarning: some View {
+        Label("Swapping clears the sets you've already logged for this slot.", systemImage: "exclamationmark.triangle.fill")
+            .font(.system(.caption, weight: .semibold))
+            .foregroundStyle(Color.danger)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     /// Names already in the current session — excluded from suggestions so they're
     /// context-specific (and never offer something you're already doing).
     private var sessionExerciseNames: Set<String> {
-        Set(exercise?.workout?.orderedExercises.map(\.name) ?? [])
+        Set((exercise?.workout ?? store.workout)?.orderedExercises.map(\.name) ?? [])
+    }
+
+    /// Quick-add grid for the "Add Exercise" flow — tap a common movement (calisthenics-forward)
+    /// to fill name + compound, or type your own below. Excludes what's already in this session.
+    @ViewBuilder private var quickAddSuggestions: some View {
+        let picks = ExerciseLibrary.quickAddSuggestions.filter { !sessionExerciseNames.contains($0) }
+        if !picks.isEmpty {
+            VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                Text("Quick Add").dsLabel()
+                chipGrid(picks)
+                Text("Tap to fill, or type your own below.")
+                    .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+            }
+        }
     }
 
     /// Same-muscle swap suggestions (instant, rule-based). Tap to fill, or type your own.
@@ -188,11 +215,10 @@ struct EditExerciseSheet: View {
     }
 
     @MainActor private func askCoach() async {
-        guard let key = CoachKey.resolved else {
+        guard let route = CoachKey.route else {
             aiError = "Add your Anthropic API key in Settings to ask Coach."
             return
         }
-        guard SharedKeyQuota.hasRemaining else { aiError = SharedKeyQuota.limitMessage; return }
         aiError = nil
         aiLoading = true
         defer { aiLoading = false }
@@ -203,7 +229,7 @@ struct EditExerciseSheet: View {
         let system = CoachSwapSuggester.systemPrompt(for: ProfileStore.current)
         let user = CoachSwapSuggester.userPrompt(exerciseName: original, isCardio: isCardio, avoid: avoid)
         do {
-            let text = try await AnthropicClient(apiKey: key)
+            let text = try await AnthropicClient(route: route)
                 .send(system: system, history: [CoachMessage(role: .user, text: user)],
                       model: .haiku, maxTokens: 300)
             let names = CoachSwapSuggester.parse(text)
@@ -211,7 +237,6 @@ struct EditExerciseSheet: View {
                 aiError = "Coach didn't return usable suggestions — try again."
             } else {
                 aiSwaps = names
-                SharedKeyQuota.recordUse()
                 Haptics.selection()
             }
         } catch let error as CoachError {

@@ -439,6 +439,69 @@ public enum ExerciseLibrary {
                 "Get your chin over the bar without swinging.",
                 "Lower under control to a full hang. Add a belt for load."
             ]),
+        "push-up": .init(
+            summary: "Bodyweight horizontal push — scalable anywhere.",
+            targets: "Chest · front delts · triceps",
+            steps: [
+                "Hands a bit wider than shoulders, body in one straight line from head to heels.",
+                "Brace your core and squeeze your glutes — no sagging hips.",
+                "Lower until your chest is just above the floor, elbows ~45° from your torso.",
+                "Press to lockout. Elevate the hands to scale down, or add a plate on your back to scale up."
+            ]),
+        "chin-up": .init(
+            summary: "Underhand (palms-toward-you) vertical pull — big biceps involvement.",
+            targets: "Lats · biceps · mid-back",
+            steps: [
+                "Hang from the bar with an underhand grip, hands about shoulder width.",
+                "Pull your elbows down and back, driving your chest toward the bar.",
+                "Get your chin over the bar without kipping or swinging.",
+                "Lower under control to a full hang. Add a belt once you pass ~12 clean reps."
+            ]),
+        "bodyweight dip": .init(
+            summary: "Vertical push on parallel bars — lean forward for chest, stay upright for triceps.",
+            targets: "Chest · triceps · front delts",
+            steps: [
+                "Support yourself on parallel bars, arms locked, shoulders down away from your ears.",
+                "Lower under control until your upper arms are about parallel to the floor.",
+                "Lean the torso slightly forward to bias chest, or stay vertical to bias triceps.",
+                "Press back to lockout. Use an assisted-dip machine or a band to scale down."
+            ]),
+        "inverted row": .init(
+            summary: "Bodyweight horizontal pull — the row counterpart to a push-up.",
+            targets: "Mid-back · lats · rear delts · biceps",
+            steps: [
+                "Set a bar (or rings) at about hip height; hang underneath with a straight body.",
+                "Grip just outside shoulder width, heels on the floor, body rigid.",
+                "Pull your chest to the bar, squeezing your shoulder blades together.",
+                "Lower under control. Raise the bar to scale down; lower it or elevate your feet to scale up."
+            ]),
+        "pike push-up": .init(
+            summary: "Bodyweight vertical press — a shoulder-focused push-up.",
+            targets: "Shoulders · triceps · upper chest",
+            steps: [
+                "Start in a downward-dog pike: hips high, hands shoulder-width, head pointing down.",
+                "Keep your hips stacked over your shoulders as much as you can.",
+                "Lower the crown of your head toward the floor between your hands.",
+                "Press back to the pike. Elevate your feet to make it harder."
+            ]),
+        "bodyweight squat": .init(
+            summary: "Unloaded squat pattern — knee-and-hip strength, anywhere.",
+            targets: "Quads · glutes",
+            steps: [
+                "Stand shoulder-width, toes slightly out, chest tall.",
+                "Sit down and back, knees tracking over your toes.",
+                "Descend to at least parallel, keeping your heels down.",
+                "Drive up through the whole foot. Slow the tempo or move to one leg (pistol) to progress."
+            ]),
+        "hanging leg raise": .init(
+            summary: "The hardest hanging core flexion — straight legs to hips.",
+            targets: "Abs · hip flexors",
+            steps: [
+                "Hang from a bar, shoulders active (slightly pulled down), legs straight.",
+                "Without swinging, raise your legs by curling your pelvis up.",
+                "Bring your thighs to at least parallel — higher if you can keep the legs straight.",
+                "Lower slowly. Bend the knees (hanging knee raise) to scale down."
+            ]),
         "t-bar row": .init(
             summary: "Supported barbell row for back thickness.",
             targets: "Mid-back · lats",
@@ -640,22 +703,22 @@ public extension ExerciseLibrary {
     /// directions catalog, so any suggested swap comes with full how-to directions.
     static let exercisesByGroup: [MuscleGroup: [String]] = [
         .chest:      ["Barbell Bench Press", "DB Bench Press", "Incline Barbell Press", "Incline DB Press",
-                      "Machine Chest Press", "Cable Fly", "Pec Deck Fly"],
-        .back:       ["Barbell Row", "Pull-up", "Weighted Pull-up / Lat Pulldown", "Cable Lat Pulldown",
+                      "Machine Chest Press", "Push-up", "Bodyweight Dip", "Cable Fly", "Pec Deck Fly"],
+        .back:       ["Barbell Row", "Pull-up", "Chin-up", "Weighted Pull-up / Lat Pulldown", "Cable Lat Pulldown",
                       "Seated Cable Row", "T-Bar Row", "Chest-Supported Row", "Single-arm DB Row",
-                      "Straight-Arm Pulldown"],
-        .shoulders:  ["Overhead Press", "Seated Shoulder Press", "Arnold Press", "DB Lateral Raise",
+                      "Inverted Row", "Straight-Arm Pulldown"],
+        .shoulders:  ["Overhead Press", "Seated Shoulder Press", "Arnold Press", "Pike Push-up", "DB Lateral Raise",
                       "Cable Lateral Raise", "Cable Face Pull", "Rear-delt Fly"],
         .biceps:     ["Barbell or EZ-bar Curl", "EZ-bar or DB Curl", "DB Incline Curl", "Hammer Curl",
                       "Preacher Curl"],
         .triceps:    ["Cable Triceps Pushdown", "Overhead Triceps Extension", "Skull Crusher",
                       "Close-Grip Bench Press", "Triceps Dips"],
         .quads:      ["Barbell Back Squat", "Front Squat", "Hack Squat", "Leg Press", "Goblet Squat",
-                      "Bulgarian Split Squat", "Walking DB Lunges", "Leg Extension"],
+                      "Bulgarian Split Squat", "Walking DB Lunges", "Bodyweight Squat", "Leg Extension"],
         .hamstrings: ["Romanian Deadlift", "Stiff-Leg Deadlift", "Deadlift", "Leg Curl", "Seated Leg Curl"],
         .glutes:     ["Barbell Hip Thrust", "Cable Pull-Through", "Glute Kickback"],
         .calves:     ["Standing Calf Raise", "Seated Calf Raise", "Single-Leg Calf Raise"],
-        .core:       ["Hanging Knee Raise", "Cable Crunch", "Cable Wood Chop / Pallof", "Plank"],
+        .core:       ["Hanging Knee Raise", "Hanging Leg Raise", "Cable Crunch", "Cable Wood Chop / Pallof", "Plank"],
         .cardio:     ["Stair Master", "Bike intervals", "Rowing Machine"]
     ]
 
@@ -690,6 +753,17 @@ public extension ExerciseLibrary {
         "Overhead Press", "Seated Shoulder Press", "Arnold Press",
         "Barbell Back Squat", "Front Squat", "Front Squat / Goblet Squat", "Hack Squat",
         "Leg Press", "Goblet Squat", "Bulgarian Split Squat", "Walking DB Lunges",
-        "Romanian Deadlift", "Stiff-Leg Deadlift", "Deadlift", "Barbell Hip Thrust"
+        "Romanian Deadlift", "Stiff-Leg Deadlift", "Deadlift", "Barbell Hip Thrust",
+        // Calisthenics compounds.
+        "Push-up", "Chin-up", "Bodyweight Dip", "Inverted Row", "Pike Push-up", "Bodyweight Squat"
     ].map { ExerciseLibrary.normalize($0) })
+
+    /// Curated movements for the "Add Exercise" quick-add grid — calisthenics first, then
+    /// popular accessories. Every name resolves in the directions catalog + a muscle group.
+    static let quickAddSuggestions: [String] = [
+        "Push-up", "Pull-up", "Chin-up", "Bodyweight Dip", "Inverted Row", "Pike Push-up",
+        "Bodyweight Squat", "Hanging Leg Raise",
+        "DB Lateral Raise", "Hammer Curl", "Cable Triceps Pushdown", "Cable Face Pull",
+        "Leg Curl", "Leg Extension", "Standing Calf Raise", "Cable Crunch"
+    ]
 }

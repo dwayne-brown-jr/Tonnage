@@ -20,7 +20,7 @@ struct StepperField: View {
             stepButton(systemName: "minus") { adjust(-step) }
 
             valueLabel
-                .frame(minWidth: 52)
+                .frame(minWidth: 34, maxWidth: .infinity)
 
             stepButton(systemName: "plus") { adjust(step) }
         }
@@ -30,6 +30,17 @@ struct StepperField: View {
                 .strokeBorder(focused ? Color.accent : Color.hairline, lineWidth: focused ? 1.5 : DS.Stroke.hairline)
         )
         .animation(DS.snappySpring, value: focused)
+        // One VoiceOver "adjustable" element: swipe up/down to change by `step`.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(unit.isEmpty ? "Value" : unit)
+        .accessibilityValue("\(format(value)) \(unit)".trimmingCharacters(in: .whitespaces))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: adjust(step)
+            case .decrement: adjust(-step)
+            @unknown default: break
+            }
+        }
     }
 
     @ViewBuilder private var valueLabel: some View {
@@ -39,6 +50,7 @@ struct StepperField: View {
                     .keyboardType(isDecimal ? .decimalPad : .numberPad)
                     .multilineTextAlignment(.center)
                     .font(DSFont.number)
+                    .monospacedDigit()                 // match the Text so the swap doesn't shift width
                     .foregroundStyle(Color.accent)
                     .focused($focused)
                     .onSubmit(commit)
@@ -54,6 +66,8 @@ struct StepperField: View {
                     .font(DSFont.number)
                     .monospacedDigit()
                     .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .contentShape(Rectangle())
                     .onTapGesture { beginEditing() }
             }
@@ -63,6 +77,8 @@ struct StepperField: View {
                     .textCase(.uppercase)
                     .kerning(0.5)
                     .foregroundStyle(Color.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
             }
         }
         .padding(.vertical, DS.Spacing.sm)
@@ -76,7 +92,7 @@ struct StepperField: View {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.textSecondary)
-                .frame(width: 34, height: 44)
+                .frame(width: 30, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

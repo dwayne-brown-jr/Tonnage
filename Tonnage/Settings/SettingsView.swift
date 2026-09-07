@@ -1,12 +1,15 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import CloudKit
 import TonnageCore
 
 /// SETTINGS: AI coach (key + model), Apple Health, rest-timer defaults, and data export/import.
 struct SettingsView: View {
     @Environment(HealthKitManager.self) private var health
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
+    @State private var showMail = false
     @Query private var workouts: [LoggedWorkout]
     @Query private var activities: [Activity]
 
@@ -17,10 +20,15 @@ struct SettingsView: View {
     @State private var connecting = false
     @State private var apiKeyInput = ""
     @State private var keySet = Keychain.read(Keychain.apiKeyAccount) != nil
+    @State private var keyError: String?
+    @State private var feedbackNote: String?
+    @State private var iCloudAvailable: Bool?   // nil = still checking
     @State private var reminders = TrainingReminders()
 
     @State private var exportDoc: JSONBackupDocument?
     @State private var showExporter = false
+    @State private var csvDoc: CSVDocument?
+    @State private var showCSVExporter = false
     @State private var showImporter = false
     @State private var showResetConfirm = false
     @State private var importMessage: String?
@@ -48,7 +56,9 @@ struct SettingsView: View {
                         restTimerCard
                         remindersCard
                         howItWorksCard
+                        syncCard
                         dataCard
+                        feedbackCard
 #if DEBUG
                         debugCard
 #endif
@@ -66,14 +76,34 @@ struct SettingsView: View {
         .onChange(of: isolationRest) { _, _ in PhoneConnectivity.shared.pushContext() }
         .task { await health.importExternalWorkouts(into: modelContext) }
         .task { await reminders.refreshAuthStatus() }
+        .task {
+            let status = try? await CKContainer(identifier: TonnageStore.cloudKitContainerID).accountStatus()
+            iCloudAvailable = (status == .available)
+        }
         .fileExporter(isPresented: $showExporter, document: exportDoc,
-                      contentType: .json, defaultFilename: "tonnage-backup") { _ in }
+                      contentType: .json, defaultFilename: "tonnage-backup") { result in
+            switch result {
+            case .success: importMessage = "Backup saved."; Haptics.success()
+            case .failure: importMessage = "Backup wasn't saved."
+            }
+        }
+        .fileExporter(isPresented: $showCSVExporter, document: csvDoc,
+                      contentType: .commaSeparatedText, defaultFilename: "tonnage-workouts") { result in
+            switch result {
+            case .success: importMessage = "CSV saved."; Haptics.success()
+            case .failure: importMessage = "CSV wasn't saved."
+            }
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
             handleImport(result)
         }
         .fullScreenCover(isPresented: $showHowItWorks) {
             OnboardingView(onFinish: { showHowItWorks = false }, finishTitle: "Done")
                 .environment(health)   // covers don't reliably inherit @Observable env
+        }
+        .sheet(isPresented: $showMail) {
+            MailComposeView(recipient: Feedback.recipient, subject: Feedback.subject, body: Feedback.body)
+                .ignoresSafeArea()
         }
         .sheet(isPresented: $showProfileEditor) {
             ProfileSetupView(onFinish: { showProfileEditor = false }, finishTitle: "Done")
@@ -88,7 +118,33 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Deletes every logged workout and activity. Your Block 01 program stays. This can't be undone.")
+            Text("Deletes every logged workout and activity (your program stays). This can't be undone — export a backup first if you might want it later.")
+        }
+    }
+
+    // MARK: iCloud sync status
+
+    private var syncCard: some View {
+        let on = iCloudAvailable == true
+        let checking = iCloudAvailable == nil
+        return card {
+            HStack(spacing: DS.Spacing.md) {
+                Image(systemName: on ? "checkmark.icloud.fill" : (checking ? "icloud" : "icloud.slash"))
+                    .font(.system(size: 20, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(on ? Color.success : Color.textTertiary)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(checking ? "Checking iCloud…" : (on ? "Synced via iCloud" : "iCloud is off"))
+                        .font(.system(.subheadline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+                    Text(on
+                         ? "Your workouts and progress back up and sync across your devices automatically."
+                         : "Your data is saved on this device. Turn on iCloud Drive in iOS Settings to back it up and sync across devices.")
+                        .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
         }
     }
 
@@ -110,9 +166,18 @@ struct SettingsView: View {
                     if let data = try? backup.encoded() {
                         exportDoc = JSONBackupDocument(data: data)
                         showExporter = true
+                    } else {
+                        importMessage = "Couldn't prepare the backup."
+                        Haptics.warning()
                     }
                 }
                 dataButton("Import", systemImage: "square.and.arrow.down") { showImporter = true }
+            }
+
+            // Set-level spreadsheet export — for coaches and lifters who live in Sheets.
+            dataButton("Export Workouts as CSV", systemImage: "tablecells") {
+                csvDoc = CSVDocument(text: CSVExport.workoutsCSV(workouts))
+                showCSVExporter = true
             }
 
             Button(role: .destructive) { showResetConfirm = true } label: {
@@ -169,6 +234,10 @@ struct SettingsView: View {
                     .background(Capsule().fill(Color.surfaceElevated2))
             }
 
+            Text("Coach features send your profile, training history, recovery metrics, and (for photo estimates) your photo to Anthropic to generate replies. Nothing else leaves your device.")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
             // Model
             HStack {
                 Text("Model").dsLabel()
@@ -192,9 +261,17 @@ struct SettingsView: View {
 
             HStack(spacing: DS.Spacing.sm) {
                 Button {
-                    Keychain.save(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines), for: Keychain.apiKeyAccount)
+                    let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Don't store an obviously-wrong key behind a green "Key Set".
+                    guard key.hasPrefix("sk-ant-") else {
+                        withAnimation(DS.spring) { keyError = "That doesn't look like an Anthropic key — they start with \"sk-ant-\"." }
+                        Haptics.warning()
+                        return
+                    }
+                    Keychain.save(key, for: Keychain.apiKeyAccount)
                     apiKeyInput = ""
                     keySet = true
+                    keyError = nil
                     Haptics.success()
                 } label: {
                     Text("Save Key").font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
@@ -219,6 +296,9 @@ struct SettingsView: View {
                 }
             }
 
+            if let keyError {
+                Text(keyError).font(.system(.caption2)).foregroundStyle(Color.danger)
+            }
             Text("Stored in the Keychain on this device only — never in plain settings.")
                 .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
         }
@@ -242,6 +322,9 @@ struct SettingsView: View {
             } else if health.hasRequested {
                 recoveryReadout
                 connectButton(title: "Refresh from Health")
+                Text("Reads bodyweight, sleep, HRV, resting heart rate, and — from a ring — body temperature & breathing rate; writes your workouts back. Cardio (runs, walks, rides) from other apps imports into MOVE automatically. Strength workouts logged in other apps are NOT imported — log lifts in TRAIN so they count toward progression. Recovery needs an Apple Watch or ring.")
+                    .font(.system(.caption2))
+                    .foregroundStyle(Color.textTertiary)
             } else {
                 Text("Connect to sync workouts and read your bodyweight, sleep, and resting heart rate.")
                     .font(DSFont.callout).foregroundStyle(Color.textSecondary)
@@ -251,10 +334,15 @@ struct SettingsView: View {
     }
 
     private var statusPill: some View {
-        let connected = health.hasRequested && health.isAvailable
-        return Text(connected ? "Connected" : "Off")
+        // Honest three-state: Off (not connected) / No data (connected but nothing read —
+        // e.g. no Apple Watch) / Connected (data flowing). Never a false green "Connected".
+        let (text, color): (String, Color) =
+            !(health.hasRequested && health.isAvailable) ? ("Off", Color.textTertiary)
+            : health.hasRecoveryData ? ("Connected", Color.success)
+            : ("No data", Color.textSecondary)
+        return Text(text)
             .font(.system(.caption, weight: .bold))
-            .foregroundStyle(connected ? Color.success : Color.textTertiary)
+            .foregroundStyle(color)
             .padding(.horizontal, DS.Spacing.sm).padding(.vertical, 3)
             .background(Capsule().fill(Color.surfaceElevated2))
     }
@@ -354,11 +442,19 @@ struct SettingsView: View {
                 }
                 Text("Days").dsLabel()
                 weekdayPicker
+                Label("Set for \(reminderClock) on your selected days.", systemImage: "checkmark.circle.fill")
+                    .font(.system(.caption2)).foregroundStyle(Color.success)
             }
 
             Text("A nudge on your training days so you don't break the chain.")
                 .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
         }
+    }
+
+    private var reminderClock: String {
+        let d = Calendar.current.date(from: DateComponents(hour: reminders.hour, minute: reminders.minute)) ?? Date()
+        let f = DateFormatter(); f.timeStyle = .short
+        return f.string(from: d)
     }
 
     /// Bridges the manager's hour/minute to a `Date` the system DatePicker can edit.
@@ -496,9 +592,61 @@ struct SettingsView: View {
 
             Text("Simulator-only: serves sample HRV / resting HR / sleep so the Readiness card and Recovery charts populate. Compiled out of release builds.")
                 .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+
+            Divider().overlay(Color.hairline)
+
+            Button {
+                UserDefaults.standard.set(1, forKey: "currentBlock")
+                UserDefaults.standard.set(3, forKey: "train.week")     // jump to the most recent week
+                DemoData.seedTrainingData(in: modelContext)
+                Task { await health.setDemoRecovery(true) }
+                Haptics.success()
+            } label: {
+                Text("Load 3 Weeks of Demo Data")
+                    .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                    .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            Text("Wipes logged data, then seeds 3 weeks of workouts (with warm-ups + progression) and a few cardio sessions into Block 01, and turns on demo recovery — so DATA, the Today card, per-muscle volume, PRs, progression, insights, and the share cards all populate.")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
         }
     }
 #endif
+
+    // MARK: Feedback
+
+    private var feedbackCard: some View {
+        card {
+            Label("Feedback", systemImage: "envelope.fill")
+                .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+            Text("Hit a bug or have an idea? I read everything — your version and device are attached automatically.")
+                .font(DSFont.callout).foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                if MailComposeView.canSend {
+                    showMail = true
+                } else if let url = Feedback.mailtoURL, UIApplication.shared.canOpenURL(url) {
+                    openURL(url)
+                } else {
+                    // No Mail app / handler — don't no-op; copy the address so they can reach me.
+                    UIPasteboard.general.string = Feedback.recipient
+                    withAnimation(DS.spring) { feedbackNote = "No mail app set up — copied \(Feedback.recipient) to your clipboard." }
+                }
+                Haptics.selection()
+            } label: {
+                Label("Send Feedback", systemImage: "paperplane.fill")
+                    .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
+                    .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                    .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            if let feedbackNote {
+                Text(feedbackNote).font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+            }
+        }
+    }
 
     // MARK: About
 
@@ -530,6 +678,19 @@ struct SettingsView: View {
     }
 
     private var divider: some View { Rectangle().fill(Color.hairline).frame(width: DS.Stroke.hairline, height: 28) }
+}
+
+/// Wraps a CSV string for `.fileExporter`.
+struct CSVDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
+    var text: String
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
 }
 
 /// Wraps backup JSON for `.fileExporter`.

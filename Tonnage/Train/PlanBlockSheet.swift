@@ -337,7 +337,7 @@ struct PlanBlockSheet: View {
     // MARK: Network
 
     private func loadPlan() async {
-        guard let key = CoachKey.resolved else {
+        guard let route = CoachKey.route else {
             phase = .error("Add your Anthropic API key in Settings to plan with Coach.")
             return
         }
@@ -356,7 +356,7 @@ struct PlanBlockSheet: View {
             replanCurrent: targetsCurrentBlock
         )
         do {
-            let text = try await AnthropicClient(apiKey: key).send(
+            let text = try await AnthropicClient(route: route).send(
                 system: system,
                 history: [CoachMessage(role: .user, text: user)],
                 model: .opus,

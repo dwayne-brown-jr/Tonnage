@@ -9,16 +9,30 @@ public struct ReadinessInputs: Sendable, Equatable {
     public var restingHRBaseline: Double?
     public var sleepHours: Double?
     public var trainedYesterday: Bool
+    /// Overnight body/skin temperature (°C) and your personal baseline. A ring (Oura,
+    /// Apple Watch) writes this to HealthKit; a rise vs baseline flags illness / strain.
+    public var bodyTempC: Double?
+    public var bodyTempBaselineC: Double?
+    /// Overnight respiratory rate (breaths/min) and baseline. Elevated breathing at rest
+    /// is an early stress / illness signal.
+    public var respiratoryRate: Double?
+    public var respiratoryRateBaseline: Double?
 
     public init(hrvMs: Double? = nil, hrvBaselineMs: Double? = nil,
                 restingHR: Double? = nil, restingHRBaseline: Double? = nil,
-                sleepHours: Double? = nil, trainedYesterday: Bool = false) {
+                sleepHours: Double? = nil, trainedYesterday: Bool = false,
+                bodyTempC: Double? = nil, bodyTempBaselineC: Double? = nil,
+                respiratoryRate: Double? = nil, respiratoryRateBaseline: Double? = nil) {
         self.hrvMs = hrvMs
         self.hrvBaselineMs = hrvBaselineMs
         self.restingHR = restingHR
         self.restingHRBaseline = restingHRBaseline
         self.sleepHours = sleepHours
         self.trainedYesterday = trainedYesterday
+        self.bodyTempC = bodyTempC
+        self.bodyTempBaselineC = bodyTempBaselineC
+        self.respiratoryRate = respiratoryRate
+        self.respiratoryRateBaseline = respiratoryRateBaseline
     }
 }
 
@@ -32,8 +46,20 @@ public struct Readiness: Sendable, Equatable {
         public enum Sign: Sendable { case positive, negative, neutral }
         public let label: String
         public let sign: Sign
+        /// Signed points this signal added to (or subtracted from) the score.
+        public let points: Double
+        /// Max |points| this signal can contribute — for scaling a contribution bar.
+        public let magnitude: Double
         public var id: String { label }
-        public init(_ label: String, _ sign: Sign) { self.label = label; self.sign = sign }
+        /// Contribution as a fraction of this signal's max, clamped to [-1, 1].
+        public var fraction: Double { magnitude > 0 ? max(-1, min(1, points / magnitude)) : 0 }
+
+        public init(_ label: String, _ sign: Sign, points: Double = 0, magnitude: Double = 1) {
+            self.label = label
+            self.sign = sign
+            self.points = points
+            self.magnitude = magnitude
+        }
     }
 
     public let score: Int?          // 0–100; nil when there isn't enough data
@@ -61,31 +87,67 @@ public enum ReadinessEngine {
         if let hrv = i.hrvMs, let base = i.hrvBaselineMs, base > 0 {
             signals += 1
             let dev = (hrv - base) / base
-            score += clamp(dev * 80, -22, 22)
+            let pts = clamp(dev * 80, -22, 22)
+            score += pts
             let sign: Readiness.Driver.Sign = dev > 0.04 ? .positive : (dev < -0.04 ? .negative : .neutral)
-            drivers.append(.init("HRV \(Int(hrv.rounded())) ms (\(pct(dev)) vs baseline)", sign))
+            drivers.append(.init("HRV \(Int(hrv.rounded())) ms (\(pct(dev)) vs baseline)", sign, points: pts, magnitude: 22))
         }
 
         // Resting HR vs baseline — lower is better.
         if let rhr = i.restingHR, let base = i.restingHRBaseline, base > 0 {
             signals += 1
             let dev = (base - rhr) / base
-            score += clamp(dev * 120, -16, 12)
+            let pts = clamp(dev * 120, -16, 12)
+            score += pts
             let sign: Readiness.Driver.Sign = dev > 0.02 ? .positive : (dev < -0.02 ? .negative : .neutral)
-            drivers.append(.init("Resting HR \(Int(rhr.rounded())) bpm", sign))
+            drivers.append(.init("Resting HR \(Int(rhr.rounded())) bpm", sign, points: pts, magnitude: 16))
+        }
+
+        // Overnight body/wrist temperature vs baseline — a rise flags illness / incomplete
+        // recovery. A 0.3°C (~0.5°F) deadband absorbs normal night-to-night skin/wrist-temp noise
+        // (wrist temperature swings more than core), so only a real elevation is penalized; cooler
+        // gives just a small credit (being a touch cold isn't strongly restorative).
+        if let temp = i.bodyTempC, let base = i.bodyTempBaselineC, base > 0 {
+            signals += 1
+            let devC = temp - base
+            let over = devC > 0 ? max(0, devC - 0.3) : min(0, devC + 0.3)
+            let pts = clamp(-over * 30, -16, 6)
+            score += pts
+            let sign: Readiness.Driver.Sign = pts > 1 ? .positive : (pts < -1 ? .negative : .neutral)
+            let arrow = devC >= 0 ? "+" : "−"
+            drivers.append(.init("Body temp \(arrow)\(String(format: "%.1f", abs(devC)))°C vs baseline",
+                                 sign, points: pts, magnitude: 16))
+        }
+
+        // Respiratory rate vs baseline — elevated breathing at rest = stress / illness signal.
+        // 0.5 br/min deadband for measurement noise; scored in absolute breaths since a rise
+        // of even 1–2 br/min over your norm is meaningful.
+        if let rr = i.respiratoryRate, let base = i.respiratoryRateBaseline, base > 0 {
+            signals += 1
+            let delta = rr - base
+            let over = delta > 0 ? max(0, delta - 0.5) : min(0, delta + 0.5)
+            let pts = clamp(-over * 6, -12, 6)
+            score += pts
+            let sign: Readiness.Driver.Sign = pts > 1 ? .positive : (pts < -1 ? .negative : .neutral)
+            drivers.append(.init(String(format: "Resp rate %.0f br/min", rr), sign, points: pts, magnitude: 12))
         }
 
         // Sleep vs a 7.5h target.
         if let sleep = i.sleepHours {
             signals += 1
-            score += clamp((sleep - 7.5) * 6, -18, 10)
-            let sign: Readiness.Driver.Sign = sleep >= 7.25 ? .positive : (sleep < 6.5 ? .negative : .neutral)
-            drivers.append(.init(String(format: "Slept %.1fh", sleep), sign))
+            let pts = clamp((sleep - 7.5) * 6, -18, 10)
+            score += pts
+            // Sign must track the points it adds, or a "green" driver that actually subtracts
+            // (e.g. 7.3h) misleads the contribution bar. Small deadband around the 7.5h target.
+            let sign: Readiness.Driver.Sign = pts > 1 ? .positive : (pts < -1 ? .negative : .neutral)
+            drivers.append(.init(String(format: "Slept %.1fh", sleep), sign, points: pts, magnitude: 18))
         }
 
         if i.trainedYesterday {
-            score -= 7
-            drivers.append(.init("Trained yesterday", .negative))
+            // A light nudge only — HRV / resting HR / sleep already carry training fatigue, so a
+            // big flat penalty here double-counts and keeps consistent trainers chronically low.
+            score -= 3
+            drivers.append(.init("Trained yesterday", .negative, points: -3, magnitude: 3))
         }
 
         guard signals > 0 else {

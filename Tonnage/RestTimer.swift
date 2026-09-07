@@ -17,6 +17,10 @@ final class RestTimer {
 
     @ObservationIgnored private var endDate: Date?
     @ObservationIgnored private var ticker: Timer?
+    @ObservationIgnored private var firedPreWarning = false
+
+    /// Pre-warning fires this many seconds before rest completes (long rests only).
+    private static let preWarningSeconds = 30
 
     private static let notifID = "tonnage.resttimer"
 
@@ -40,22 +44,26 @@ final class RestTimer {
         self.label = label
         self.totalSeconds = seconds
         self.remainingSeconds = seconds
-        self.endDate = Date().addingTimeInterval(TimeInterval(seconds))
+        let end = Date().addingTimeInterval(TimeInterval(seconds))
+        self.endDate = end
         self.phase = .running
+        self.firedPreWarning = seconds <= Self.preWarningSeconds * 2   // short rests skip the warning
         requestAuthorizationIfNeeded()
         scheduleNotification(in: seconds)
-        RestLiveActivity.start(endDate: endDate!, exerciseName: label, totalSeconds: seconds)
+        RestLiveActivity.start(endDate: end, exerciseName: label, totalSeconds: seconds)
         startTicker()
         Haptics.impact(.medium)
     }
 
     func addTime(_ seconds: Int) {
         guard phase == .running, let end = endDate else { return }
-        endDate = end.addingTimeInterval(TimeInterval(seconds))
+        let newEnd = end.addingTimeInterval(TimeInterval(seconds))
+        endDate = newEnd
         totalSeconds = max(totalSeconds, totalSeconds + seconds)
         remainingSeconds = computeRemaining()
+        if remainingSeconds > Self.preWarningSeconds * 2 { firedPreWarning = false }   // re-arm after extend
         scheduleNotification(in: remainingSeconds)
-        RestLiveActivity.update(endDate: endDate!, exerciseName: label, totalSeconds: totalSeconds)
+        RestLiveActivity.update(endDate: newEnd, exerciseName: label, totalSeconds: totalSeconds)
         Haptics.impact(.light)
     }
 
@@ -72,8 +80,15 @@ final class RestTimer {
     }
 
     private func tick() {
-        remainingSeconds = computeRemaining()
-        if remainingSeconds <= 0 { fireComplete() }
+        let r = computeRemaining()
+        // Only publish when the displayed second actually changes — the 0.2s tick (for prompt
+        // completion) would otherwise re-render the bar 5×/sec on the same value.
+        if r != remainingSeconds { remainingSeconds = r }
+        if !firedPreWarning && r > 0 && r <= Self.preWarningSeconds {
+            firedPreWarning = true
+            Haptics.impact(.medium)        // heads-up: ~30s left, start setting up
+        }
+        if r <= 0 { fireComplete() }
     }
 
     private func computeRemaining() -> Int {

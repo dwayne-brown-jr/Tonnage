@@ -4,6 +4,7 @@ Tonnage/Secrets.swift
 # Xcode / build
 DerivedData/
 build/
+build-sim/
 .build/
 *.xcuserstate
 *.xcuserdatad/

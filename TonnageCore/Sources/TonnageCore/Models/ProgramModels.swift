@@ -73,6 +73,9 @@ public final class ExerciseTemplate {
     public var isCompound: Bool = false
     public var isCardio: Bool = false
     public var sortOrder: Int = 0
+    /// Superset pairing with the next exercise — mirrors `LoggedExercise.supersetWithNext`
+    /// so a pairing made during a session persists into future weeks.
+    public var supersetWithNext: Bool = false
 
     public var session: SessionTemplate?
 

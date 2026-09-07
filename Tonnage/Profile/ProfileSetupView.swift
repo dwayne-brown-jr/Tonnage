@@ -8,6 +8,7 @@ struct ProfileSetupView: View {
     var finishTitle: String = "Start Training"
 
     @AppStorage(ProfileStore.Key.name) private var name = ""
+    @State private var showNameError = false
 
     private var canFinish: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -46,23 +47,36 @@ struct ProfileSetupView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
 
-                Button {
-                    Haptics.success()
-                    onFinish()
-                } label: {
-                    Text(finishTitle)
-                        .font(.system(.headline, weight: .bold))
-                        .foregroundStyle(Color.onAccent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, DS.Spacing.md)
-                        .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
-                        .opacity(canFinish ? 1 : 0.5)
+                VStack(spacing: DS.Spacing.xs) {
+                    if showNameError && !canFinish {
+                        Label("Enter your name to continue.", systemImage: "exclamationmark.circle.fill")
+                            .font(DSFont.caption).foregroundStyle(Color.danger)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Button {
+                        // Don't fail silently: if the one required field is blank, say so.
+                        guard canFinish else {
+                            withAnimation(DS.spring) { showNameError = true }
+                            Haptics.warning()
+                            return
+                        }
+                        Haptics.success()
+                        onFinish()
+                    } label: {
+                        Text(finishTitle)
+                            .font(.system(.headline, weight: .bold))
+                            .foregroundStyle(Color.onAccent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, DS.Spacing.md)
+                            .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                            .opacity(canFinish ? 1 : 0.5)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .disabled(!canFinish)
                 .padding(.horizontal, DS.Spacing.lg)
                 .padding(.bottom, DS.Spacing.lg)
                 .padding(.top, DS.Spacing.sm)
+                .onChange(of: name) { _, _ in if canFinish { showNameError = false } }
             }
         }
     }

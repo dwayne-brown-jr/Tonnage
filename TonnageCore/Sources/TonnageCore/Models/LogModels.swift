@@ -58,7 +58,9 @@ public final class LoggedWorkout {
     // MARK: Live session stats
 
     private var allSets: [LoggedSet] { (exercises ?? []).flatMap { $0.sets ?? [] } }
-    private var completedSets: [LoggedSet] { allSets.filter(\.completed) }
+    /// Completed WORKING sets — warm-ups are excluded everywhere this feeds (volume,
+    /// reps, adherence, "did you train"), so they never inflate the hard-set math.
+    private var completedSets: [LoggedSet] { allSets.filter { $0.completed && !$0.isWarmup } }
 
     /// Number of completed (checked) sets.
     public var completedSetCount: Int { completedSets.count }
@@ -87,6 +89,10 @@ public final class LoggedExercise {
     public var repRange: String = ""
     public var rpeTarget: String = ""
     public var prescriptionNotes: String = ""
+    /// Paired with the NEXT exercise (by sortOrder) as a superset: alternate sets,
+    /// rest only after the chain's last movement. Chains (A→B→C) come from
+    /// consecutive flags. Defaults false so existing records migrate untouched.
+    public var supersetWithNext: Bool = false
 
     /// Optional link to the template this came from (nullify on delete).
     public var exerciseTemplate: ExerciseTemplate?
@@ -125,14 +131,16 @@ public final class LoggedExercise {
         (sets ?? []).sorted { $0.sortOrder < $1.sortOrder }
     }
 
-    /// Heaviest completed set, by weight then reps — used for top-set history.
+    /// Heaviest completed WORKING set, by weight then reps — used for top-set history
+    /// (warm-ups excluded so a ramp set never counts as your top set).
     public var topSet: LoggedSet? {
-        (sets ?? []).filter(\.completed).max {
+        (sets ?? []).filter { $0.completed && !$0.isWarmup }.max {
             ($0.weight, Double($0.reps)) < ($1.weight, Double($1.reps))
         }
     }
 
-    public var completedSetCount: Int { (sets ?? []).filter(\.completed).count }
+    /// Completed working sets (warm-ups excluded).
+    public var completedSetCount: Int { (sets ?? []).filter { $0.completed && !$0.isWarmup }.count }
     public var isFullyLogged: Bool {
         let s = sets ?? []
         return !s.isEmpty && s.allSatisfy(\.completed)
@@ -154,6 +162,17 @@ public final class LoggedSet {
     public var flights: Int?
 
     public var completed: Bool = false
+    /// A warm-up (ramp) set — performed but NOT counted as working volume, toward PRs,
+    /// top sets, or adherence. Logged like any set; just excluded from the hard-set math.
+    public var isWarmup: Bool = false
+    /// A back-off performed immediately after the set above at reduced load, no rest
+    /// between. Counts as working volume; labeled "D" instead of a set number.
+    public var isDropSet: Bool = false
+    /// "As many reps as possible" — the reps field records what was achieved.
+    public var isAMRAP: Bool = false
+    /// Optional per-set note ("felt heavy", "grip gave out") — optional so existing
+    /// records and CloudKit mirroring migrate cleanly.
+    public var note: String?
     public var timestamp: Date = Date.now
     public var sortOrder: Int = 0
 
@@ -167,6 +186,7 @@ public final class LoggedSet {
         distanceMiles: Double? = nil,
         flights: Int? = nil,
         completed: Bool = false,
+        isWarmup: Bool = false,
         timestamp: Date = .now,
         sortOrder: Int
     ) {
@@ -177,10 +197,11 @@ public final class LoggedSet {
         self.distanceMiles = distanceMiles
         self.flights = flights
         self.completed = completed
+        self.isWarmup = isWarmup
         self.timestamp = timestamp
         self.sortOrder = sortOrder
     }
 
-    /// Volume contribution (weight × reps) for completed strength sets.
-    public var volume: Double { completed ? weight * Double(reps) : 0 }
+    /// Volume contribution (weight × reps) for completed WORKING strength sets.
+    public var volume: Double { (completed && !isWarmup) ? weight * Double(reps) : 0 }
 }

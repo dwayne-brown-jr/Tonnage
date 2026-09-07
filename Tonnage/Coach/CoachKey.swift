@@ -1,73 +1,65 @@
 import Foundation
 
-/// Resolves which Anthropic API key the coach should use:
-/// 1. the user's own key (entered in Settings → Keychain), if present;
-/// 2. otherwise the bundled shared key from `Secrets.swift`, if set.
-/// This lets TestFlight testers use the coach without their own key, while still
-/// letting anyone override with their own.
+/// Decides how the coach reaches Anthropic:
+/// 1. the user's own key (entered in Settings → Keychain), if present → call Anthropic directly;
+/// 2. otherwise the shared proxy (if a proxy URL is configured) → no key ships in the app;
+/// 3. otherwise no backend → the UI prompts the user to add their own key.
 enum CoachKey {
-    static var resolved: String? {
-        if let own = Keychain.read(Keychain.apiKeyAccount)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !own.isEmpty {
-            return own
-        }
-        let bundled = BundledSecrets.anthropicAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        return bundled.isEmpty ? nil : bundled
+    /// The user's own Anthropic key, or nil if they haven't set one.
+    static var ownKey: String? {
+        let k = Keychain.read(Keychain.apiKeyAccount)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (k?.isEmpty == false) ? k : nil
     }
 
-    static var hasKey: Bool { resolved != nil }
+    /// The configured shared-proxy endpoint, or nil if none is set (see `BundledSecrets`).
+    static var proxyURL: URL? {
+        let s = BundledSecrets.proxyBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty, let url = URL(string: s) else { return nil }
+        return url
+    }
 
-    /// True when the active key is the shared bundled one (not the user's own).
-    static var usingSharedKey: Bool {
-        let own = Keychain.read(Keychain.apiKeyAccount)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return own.isEmpty && !BundledSecrets.anthropicAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// The route a request should take, or nil when there's no usable backend.
+    static var route: CoachRoute? {
+        if let own = ownKey { return .direct(apiKey: own) }
+        if let proxy = proxyURL { return .proxy(url: proxy) }
+        return nil
+    }
+
+    /// True when the coach can run at all (own key OR shared proxy available).
+    static var hasBackend: Bool { route != nil }
+
+    /// True when the athlete is on the shared proxy (no own key) — the path the daily
+    /// free-message quota applies to.
+    static var usingSharedProxy: Bool { ownKey == nil && proxyURL != nil }
+}
+
+/// Stable per-install identifier sent to the proxy so it can meter the shared-key quota
+/// per device. Not tied to any Apple identifier; resets on reinstall.
+enum DeviceID {
+    private static let key = "coach.deviceID"
+    static var current: String {
+        if let id = UserDefaults.standard.string(forKey: key) { return id }
+        let id = UUID().uuidString
+        UserDefaults.standard.set(id, forKey: key)
+        return id
     }
 }
 
-/// Caps daily Coach usage when running on the shared bundled key, so a single tester
-/// can't run up an unbounded bill on the owner's account. Completely inert when the user
-/// has supplied their own key — they're never limited. Counts only successful messages,
-/// and rolls over at local midnight.
+/// Display-only view of the shared-key daily allowance. Enforcement now lives SERVER-SIDE
+/// in the proxy (so it can't be bypassed by reinstalling); the proxy returns how many
+/// messages remain in an `x-quota-remaining` header, which we cache here just to show the
+/// athlete. Inert when the user is on their own key (no cap).
 enum SharedKeyQuota {
-    static let dailyLimit = 30
-    private static let countKey = "coach.sharedKey.count"
-    private static let dayKey = "coach.sharedKey.day"
+    static var usingSharedKey: Bool { CoachKey.usingSharedProxy }
 
-    /// True if there's at least one message left today — or if the user is on their own
-    /// key, in which case there's no cap at all.
-    static var hasRemaining: Bool {
-        guard CoachKey.usingSharedKey else { return true }
-        return used < dailyLimit
-    }
+    private static let remainingKey = "coach.sharedKey.remaining"
 
-    static var remaining: Int { CoachKey.usingSharedKey ? max(0, dailyLimit - used) : .max }
+    /// Last remaining count the proxy reported, or nil if we haven't called yet today.
+    static var cachedRemaining: Int? { UserDefaults.standard.object(forKey: remainingKey) as? Int }
+
+    static func cacheRemaining(_ n: Int) { UserDefaults.standard.set(max(0, n), forKey: remainingKey) }
 
     static var limitMessage: String {
-        "You've used today's \(dailyLimit) free Coach messages on the shared key. Add your own Anthropic API key in Settings for unlimited chat — the free allowance resets tomorrow."
-    }
-
-    /// Record one successful message against today's allowance. No-op on the user's own key.
-    static func recordUse() {
-        guard CoachKey.usingSharedKey else { return }
-        UserDefaults.standard.set(used + 1, forKey: countKey)   // `used` handles the daily rollover
-    }
-
-    private static var used: Int {
-        rolloverIfNeeded()
-        return UserDefaults.standard.integer(forKey: countKey)
-    }
-
-    private static func rolloverIfNeeded() {
-        if UserDefaults.standard.string(forKey: dayKey) != todayStamp {
-            UserDefaults.standard.set(todayStamp, forKey: dayKey)
-            UserDefaults.standard.set(0, forKey: countKey)
-        }
-    }
-
-    private static var todayStamp: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = .current
-        return f.string(from: .now)
+        "You've used today's free Coach messages on the shared key. Add your own Anthropic API key in Settings for unlimited chat — the free allowance resets tomorrow."
     }
 }

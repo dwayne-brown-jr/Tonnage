@@ -57,13 +57,23 @@ public struct NextSetCue: Sendable, Equatable {
 public enum CoachEngine {
 
     public static func call(week: Int, last: LastTopSet?, repRange: String, isCardio: Bool,
-                            holdProgression: Bool = false) -> CoachsCall {
+                            holdProgression: Bool = false, forceDeload: Bool = false) -> CoachsCall {
         if isCardio {
             return CoachsCall(headline: "Easy effort — a finisher, not a test.",
                               suggestedWeight: nil, suggestedReps: nil, emphasis: .neutral)
         }
 
         let lowReps = lowRep(of: repRange)
+
+        // Early deload (readiness-triggered or manual) — treat this week like W5
+        // regardless of where the calendar says you are.
+        if forceDeload && week < 5 {
+            let w = last.map { roundToStep($0.weight * 0.6, step: 5) }
+            return CoachsCall(headline: "Early deload — ~60% load, leave 4–5 in reserve. Recover, don't grind.",
+                              suggestedWeight: w,
+                              suggestedReps: last?.reps ?? lowReps,
+                              emphasis: .deload)
+        }
 
         // Week 1 — intentional ramp.
         if week <= 1 {

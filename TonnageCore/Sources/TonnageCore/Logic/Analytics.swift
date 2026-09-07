@@ -15,8 +15,68 @@ public enum Analytics {
         public let weight: Double
         public let reps: Int
         public var id: Int { week }
-        /// Epley estimated 1RM.
-        public var estimatedOneRepMax: Double { weight * (1 + Double(reps) / 30) }
+        /// Epley estimated 1RM (single source of truth lives in `PersonalRecords.epley`).
+        public var estimatedOneRepMax: Double { PersonalRecords.epley(weight: weight, reps: reps) }
+    }
+
+    public struct MuscleVolume: Sendable, Identifiable, Equatable {
+        /// `nil` = "Other" — movements we don't recognize (custom/ad-hoc names), kept so
+        /// volume is never silently dropped.
+        public let group: MuscleGroup?
+        /// Hard sets = completed working (non-cardio) sets in the window.
+        public let sets: Int
+        public var id: String { group?.rawValue ?? "other" }
+        public var label: String { group?.label ?? "Other" }
+    }
+
+    /// Evidence-based weekly hard-set landmarks per muscle (hypertrophy): ~10 is the
+    /// minimum effective volume, ~20 the top of the productive range for most lifters.
+    public static let weeklySetsMEV = 10
+    public static let weeklySetsMAV = 20
+
+    /// Hard (completed, non-cardio) sets per muscle group for the given workouts — the
+    /// caller filters the window (e.g. one week). Cardio is excluded; unrecognized
+    /// movements roll up into "Other". Ordered by the muscle enum with Other last; groups
+    /// with zero sets are omitted.
+    public static func setsPerMuscle(_ workouts: [LoggedWorkout]) -> [MuscleVolume] {
+        var counts: [MuscleGroup?: Int] = [:]
+        for w in workouts where w.dayType == .lift {
+            for ex in (w.exercises ?? []) where !ex.isCardio {
+                let done = ex.completedSetCount
+                guard done > 0 else { continue }
+                counts[ExerciseLibrary.muscleGroup(for: ex.name), default: 0] += done
+            }
+        }
+        var result = MuscleGroup.allCases.compactMap { g -> MuscleVolume? in
+            guard g != .cardio, let c = counts[g], c > 0 else { return nil }
+            return MuscleVolume(group: g, sets: c)
+        }
+        if let other = counts[nil], other > 0 {
+            result.append(MuscleVolume(group: nil, sets: other))
+        }
+        return result
+    }
+
+    /// The latest week within `workouts` that has any completed lifting (nil if none).
+    public static func latestLoggedWeek(_ workouts: [LoggedWorkout]) -> Int? {
+        workouts.filter { $0.dayType == .lift && $0.completedSetCount > 0 }.map(\.weekNumber).max()
+    }
+
+    public struct WeekSummary: Sendable, Equatable {
+        public let week: Int
+        public let sessions: Int
+        public let sets: Int
+        public let volume: Double
+    }
+
+    /// Sessions / hard sets / tonnage for a single week (warm-ups + rest already excluded
+    /// by the underlying accessors). The caller passes the block-scoped workouts.
+    public static func weekSummary(_ workouts: [LoggedWorkout], week: Int) -> WeekSummary {
+        let wk = workouts.filter { $0.weekNumber == week }
+        return WeekSummary(week: week,
+                           sessions: sessionsLogged(wk),
+                           sets: totalSets(wk),
+                           volume: totalVolume(wk))
     }
 
     /// Total tonnage per week across the block (0 for weeks with no logged volume).
@@ -40,14 +100,37 @@ public enum Analytics {
     }
 
     /// Top-set (heaviest completed set) per week for one exercise, ascending by week.
+    /// Aggregates to ONE point per week (the heaviest by e1RM) so a week logged twice
+    /// can't emit duplicate points with colliding chart IDs.
     public static func topSetSeries(for name: String, in workouts: [LoggedWorkout]) -> [TopSetPoint] {
-        workouts
-            .sorted { $0.weekNumber < $1.weekNumber }
-            .compactMap { workout in
-                guard let exercise = workout.exercises?.first(where: { $0.name == name }),
-                      let top = exercise.topSet else { return nil }
-                return TopSetPoint(week: workout.weekNumber, weight: top.weight, reps: top.reps)
-            }
+        var bestByWeek: [Int: TopSetPoint] = [:]
+        for workout in workouts {
+            guard let exercise = workout.exercises?.first(where: { $0.name == name }),
+                  let top = exercise.topSet else { continue }
+            let point = TopSetPoint(week: workout.weekNumber, weight: top.weight, reps: top.reps)
+            if let existing = bestByWeek[workout.weekNumber],
+               existing.estimatedOneRepMax >= point.estimatedOneRepMax { continue }
+            bestByWeek[workout.weekNumber] = point
+        }
+        return bestByWeek.values.sorted { $0.week < $1.week }
+    }
+
+    /// Least-squares projection of a series to a future x ("if this trend holds…").
+    /// Needs ≥ 2 points and a non-degenerate x spread; nil otherwise or if the
+    /// projected value isn't positive (a falling trend never projects below zero).
+    public static func linearProjection(points: [(x: Double, y: Double)], toX targetX: Double) -> Double? {
+        guard points.count >= 2 else { return nil }
+        let n = Double(points.count)
+        let sx = points.reduce(0) { $0 + $1.x }
+        let sy = points.reduce(0) { $0 + $1.y }
+        let sxx = points.reduce(0) { $0 + $1.x * $1.x }
+        let sxy = points.reduce(0) { $0 + $1.x * $1.y }
+        let denominator = n * sxx - sx * sx
+        guard abs(denominator) > 1e-9 else { return nil }
+        let slope = (n * sxy - sx * sy) / denominator
+        let intercept = (sy - slope * sx) / n
+        let value = slope * targetX + intercept
+        return value > 0 ? value : nil
     }
 
     // Block summary.

@@ -16,7 +16,13 @@ final class CoachViewModel {
 
     @ObservationIgnored private var context: ModelContext?
 
-    var hasKey: Bool { CoachKey.hasKey }
+    var hasKey: Bool { CoachKey.hasBackend }
+    /// Shared-key daily allowance — surfaced in the UI so testers see it. nil until the
+    /// proxy reports a remaining count (enforcement is server-side now).
+    var usingSharedKey: Bool { CoachKey.usingSharedProxy }
+    var quotaRemaining: Int? { SharedKeyQuota.cachedRemaining }
+    /// A turn failed if the transcript ends on a user message with no reply — offer a retry.
+    var canRetry: Bool { !isSending && messages.last?.role == .user }
 
     /// How many trailing messages of the transcript we actually send to the API. The full
     /// conversation is persisted for display, but re-sending all of it every turn would
@@ -33,28 +39,41 @@ final class CoachViewModel {
     func send(_ userText: String, system: String, model: CoachModel) async {
         let trimmed = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isSending else { return }
-        guard let key = CoachKey.resolved else {
+        guard let route = CoachKey.route else {
             errorText = CoachError.missingKey.errorDescription
             return
         }
-        // Testers on the shared bundled key get a daily cap so one person can't run up an
-        // unbounded bill. Checked before we append, so a blocked send leaves no orphan
-        // user bubble. Users with their own key are never limited.
-        guard SharedKeyQuota.hasRemaining else {
-            errorText = SharedKeyQuota.limitMessage
-            return
-        }
-
+        // The shared-key daily cap is enforced server-side by the proxy now (so it can't be
+        // bypassed by reinstalling); an over-quota call comes back as a friendly 429.
         errorText = nil
         append(CoachMessage(role: .user, text: trimmed))
         isSending = true
         defer { isSending = false }
 
         do {
-            let reply = try await AnthropicClient(apiKey: key)
-                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024)
+            let reply = try await AnthropicClient(route: route)
+                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024, timeout: 35)
             append(CoachMessage(role: .assistant, text: reply))
-            SharedKeyQuota.recordUse()
+        } catch {
+            errorText = (error as? CoachError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Re-send the last user message after a failed turn, without duplicating its bubble
+    /// (the failed turn left it as the transcript tail).
+    func retryLast(system: String, model: CoachModel) async {
+        guard canRetry else { return }
+        guard let route = CoachKey.route else {
+            errorText = CoachError.missingKey.errorDescription
+            return
+        }
+        errorText = nil
+        isSending = true
+        defer { isSending = false }
+        do {
+            let reply = try await AnthropicClient(route: route)
+                .send(system: system, history: windowed(messages), model: model, maxTokens: model == .opus ? 1800 : 1024, timeout: 35)
+            append(CoachMessage(role: .assistant, text: reply))
         } catch {
             errorText = (error as? CoachError)?.errorDescription ?? error.localizedDescription
         }
@@ -72,7 +91,7 @@ final class CoachViewModel {
         messages.removeAll()
         errorText = nil
         try? context?.delete(model: CoachChatMessage.self)
-        try? context?.save()
+        context?.saveOrReport()
     }
 
     // MARK: Persistence
@@ -81,7 +100,7 @@ final class CoachViewModel {
         messages.append(message)
         guard let context else { return }
         context.insert(CoachChatMessage(id: message.id, roleRaw: message.role.rawValue, text: message.text))
-        try? context.save()
+        context.saveOrReport()
     }
 
     private func loadHistory() {

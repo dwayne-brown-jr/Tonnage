@@ -1,18 +1,49 @@
 import SwiftUI
+import SwiftData
 import Charts
 import TonnageCore
 
 /// The "Recovery" detail screen (tapped from the Readiness card on TRAIN): today's
-/// readiness + its drivers, then trend charts for Readiness, HRV, resting HR, and
-/// sleep over the last two weeks. All data is HealthKit-derived.
+/// readiness + its drivers, plain-language insights from the trends, then trend charts
+/// for Readiness, HRV, resting HR, and sleep over the last two weeks. HealthKit-derived.
 struct RecoveryView: View {
     @Environment(HealthKitManager.self) private var health
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Query(sort: \LoggedWorkout.weekNumber) private var workouts: [LoggedWorkout]
+    @AppStorage("currentBlock") private var currentBlock = 1
+    @AppStorage("train.week") private var trainWeek = 1
+    /// "block:week" — when it matches the current TRAIN selection, the Coach's Call
+    /// treats that week as a deload (see TrainView).
+    @AppStorage("train.deloadOverride") private var deloadOverrideKey = ""
+
+    private var deloadActive: Bool { deloadOverrideKey == "\(currentBlock):\(trainWeek)" }
     @State private var series = RecoverySeries()
+    @State private var sleepStages: SleepStages?
     @State private var loaded = false
     @State private var connecting = false
 
     private var readiness: Readiness { health.currentReadiness() }
+
+    // MARK: Insights (trend storytelling + advisory deload)
+
+    private var scopedWorkouts: [LoggedWorkout] { workouts.filter { $0.blockNumber == currentBlock } }
+
+    private var insights: [TrainingInsight] {
+        let lifts = Analytics.loggedExerciseNames(scopedWorkouts)
+            .filter { ExerciseLibrary.isCompound($0) }
+            .map { name in
+                InsightEngine.Inputs.Lift(
+                    name: name,
+                    e1rm: Analytics.topSetSeries(for: name, in: scopedWorkouts).map(\.estimatedOneRepMax))
+            }
+        return InsightEngine.generate(.init(
+            readiness: readinessTrend.map(\.value),
+            hrv: series.hrv.map(\.value),
+            lifts: lifts,
+            currentWeek: trainWeek,
+            trainingStreak: FatigueEngine.trainingStreak(workouts: workouts)))
+    }
 
     var body: some View {
         NavigationStack {
@@ -21,13 +52,36 @@ struct RecoveryView: View {
                 ScrollView {
                     VStack(spacing: DS.Spacing.lg) {
                         header
-                        if !health.hasRequested && readiness.band == .unknown { connectCard }
+                        if !health.hasRequested && readiness.band == .unknown {
+                            connectCard
+                        } else if loaded && !health.hasRecoveryData {
+                            noDataCard   // connected, but nothing came back (no Watch / reads denied)
+                        }
                         if !readiness.drivers.isEmpty { driversCard }
-                        if loaded {
-                            trendCard("Readiness", series: readinessTrend, unit: "", fixedDomain: 0...100)
-                            trendCard("HRV", series: series.hrv, unit: "ms")
-                            trendCard("Resting HR", series: series.restingHR, unit: "bpm")
-                            trendCard("Sleep", series: series.sleepHours, unit: "h", decimals: 1)
+                        if loaded && !insights.isEmpty { insightsCard }
+                        if loaded && !health.hasRecoveryData {
+                            // The noDataCard above already explains it — don't also stack four
+                            // empty "needs Apple Watch data" trend cards for a Watch-less user.
+                        } else if loaded {
+                            trendCard("Readiness", series: readinessTrend, unit: "", fixedDomain: 0...100,
+                                      info: "Your daily recovery read — HRV, resting heart rate, sleep, and (with a ring) body temperature and breathing rate, scored 0–100 against your own baselines. The trend is plotted against your current baseline.")
+                            trendCard("HRV", series: series.hrv, unit: "ms",
+                                      info: "Heart-rate variability — the beat-to-beat variation in your pulse. Higher vs your baseline usually means better recovery; a steady drift down can flag accumulating fatigue, illness, or stress.")
+                            trendCard("Resting HR", series: series.restingHR, unit: "bpm",
+                                      info: "Your heart rate at rest. Lower vs your baseline generally means better-recovered; an elevated resting HR often shows up a day or two before you feel run-down.")
+                            trendCard("Sleep", series: series.sleepHours, unit: "h", decimals: 1,
+                                      info: "Total time asleep, anchored to each wake-up day. Sleep is when you adapt to training — a consistent 7–9 hours supports recovery and performance.")
+                            sleepStagesCard
+                            if !series.bodyTempC.isEmpty {
+                                trendCard("Body Temp", series: series.bodyTempC, unit: "°C", decimals: 1,
+                                          fixedDomain: tightDomain(series.bodyTempC, minPad: 0.3),
+                                          info: "Your overnight skin temperature (from a ring like Oura). Readiness watches the change vs your own baseline — a rise of a few tenths of a degree often shows up a day before illness or when you're not fully recovered.")
+                            }
+                            if !series.respiratoryRate.isEmpty {
+                                trendCard("Respiratory Rate", series: series.respiratoryRate, unit: "br/min",
+                                          fixedDomain: tightDomain(series.respiratoryRate, minPad: 1),
+                                          info: "Breaths per minute while you sleep. Steady is good; an elevated rate vs your baseline is an early stress or illness signal that pulls readiness down.")
+                            }
                         } else {
                             ProgressView().tint(.accent).frame(maxWidth: .infinity, minHeight: 200)
                         }
@@ -47,6 +101,7 @@ struct RecoveryView: View {
         .tint(.accent)
         .task {
             series = await health.recoverySeries()
+            sleepStages = await health.lastNightSleepStages()
             loaded = true
         }
     }
@@ -84,7 +139,7 @@ struct RecoveryView: View {
     }
 
     private var driversCard: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
             Text("What's driving it").dsLabel()
             ForEach(readiness.drivers) { driver in
                 HStack(spacing: DS.Spacing.sm) {
@@ -92,7 +147,84 @@ struct RecoveryView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(driverColor(driver.sign))
                         .frame(width: 16)
-                    Text(driver.label).font(DSFont.numberSm).foregroundStyle(Color.textSecondary)
+                    Text(driver.label)
+                        .font(DSFont.numberSm).foregroundStyle(Color.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    Spacer(minLength: DS.Spacing.sm)
+                    contributionBar(driver).frame(width: 84, height: 8)
+                        .accessibilityHidden(true)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(driver.label)
+                .accessibilityValue(signWord(driver.sign))
+            }
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
+
+    /// A diverging bar centered on baseline: grows right (green) for a positive
+    /// contribution, left (orange) for a negative one — Oura-style "how much it helped/hurt."
+    private func contributionBar(_ d: Readiness.Driver) -> some View {
+        GeometryReader { geo in
+            let half = geo.size.width / 2
+            let frac = CGFloat(d.fraction)
+            let barW = max(d.points == 0 ? 0 : 3, half * abs(frac))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.surfaceElevated2)
+                Rectangle().fill(Color.textTertiary.opacity(0.6))
+                    .frame(width: 1).frame(maxHeight: .infinity)
+                    .offset(x: half - 0.5)
+                Capsule().fill(driverColor(d.sign))
+                    .frame(width: barW)
+                    .offset(x: frac >= 0 ? half : half - barW)
+            }
+        }
+    }
+
+    private var insightsCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            Text("Insights").dsLabel()
+            ForEach(insights) { insight in
+                HStack(alignment: .top, spacing: DS.Spacing.md) {
+                    Image(systemName: insight.systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(insightColor(insight.severity))
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(insight.title)
+                            .font(.system(.subheadline, weight: .bold))
+                            .foregroundStyle(Color.textPrimary)
+                        Text(insight.message)
+                            .font(DSFont.callout)
+                            .foregroundStyle(Color.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        // The deload advice is actionable, not just informational —
+                        // one tap flips this week to deload-week coaching on TRAIN.
+                        if insight.id == "deload" {
+                            if deloadActive {
+                                Label("Deload active for this week", systemImage: "checkmark.circle.fill")
+                                    .font(.system(.caption, weight: .bold))
+                                    .foregroundStyle(Color.success)
+                                    .padding(.top, 4)
+                            } else {
+                                Button {
+                                    deloadOverrideKey = "\(currentBlock):\(trainWeek)"
+                                    Haptics.success()
+                                } label: {
+                                    Text("Start Deload This Week")
+                                        .font(.system(.caption, weight: .bold))
+                                        .foregroundStyle(Color.onAccent)
+                                        .padding(.horizontal, DS.Spacing.md).padding(.vertical, 6)
+                                        .background(Color.accent, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 4)
+                            }
+                        }
+                    }
                     Spacer(minLength: 0)
                 }
             }
@@ -100,6 +232,16 @@ struct RecoveryView: View {
         .padding(DS.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+    }
+
+    private func insightColor(_ s: TrainingInsight.Severity) -> Color {
+        switch s {
+        case .positive: Color.success
+        case .info:     Color.accent
+        case .caution:  Color.accent
+        }
     }
 
     private var connectCard: some View {
@@ -113,6 +255,7 @@ struct RecoveryView: View {
                 Task {
                     await health.requestAuthorization()
                     series = await health.recoverySeries()
+                    sleepStages = await health.lastNightSleepStages()
                     loaded = true
                     connecting = false
                 }
@@ -133,14 +276,81 @@ struct RecoveryView: View {
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
     }
 
+    private var noDataCard: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            Label("No recovery data yet", systemImage: "applewatch.slash")
+                .font(.system(.headline, weight: .semibold)).foregroundStyle(Color.textPrimary)
+            Text("Readiness needs an Apple Watch — it reads HRV, resting heart rate, and sleep. If you have one, open the Health app → Sharing → Apps → Tonnage and allow those.")
+                .font(DSFont.callout).foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                if let url = URL(string: "x-apple-health://") { openURL(url) }
+            } label: {
+                Label("Open Health", systemImage: "heart.fill")
+                    .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.accent)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(DS.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
+
+    // MARK: Sleep stages
+
+    @ViewBuilder private var sleepStagesCard: some View {
+        if let s = sleepStages, s.total > 0 {
+            VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Sleep Stages").dsLabel()
+                    InfoPopoverButton(title: "Sleep Stages",
+                        message: "Deep sleep drives physical recovery and muscle repair; REM supports memory and mood; core (light) sleep makes up most of the night. More deep + REM generally means a more restorative night.")
+                    Spacer()
+                    Text(String(format: "%.1f h", s.total))
+                        .font(DSFont.numberSm).foregroundStyle(Color.textPrimary)
+                }
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    let total = max(s.total, 0.0001)
+                    HStack(spacing: 0) {
+                        Rectangle().fill(Color.accent).frame(width: w * CGFloat(s.deep / total))
+                        Rectangle().fill(Color.success).frame(width: w * CGFloat(s.rem / total))
+                        Rectangle().fill(Color.textSecondary).frame(width: w * CGFloat(s.core / total))
+                    }
+                }
+                .frame(height: 10)
+                .clipShape(Capsule())
+                HStack(spacing: DS.Spacing.lg) {
+                    stageLegend("Deep", s.deep, Color.accent)
+                    stageLegend("REM", s.rem, Color.success)
+                    stageLegend("Core", s.core, Color.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(DS.Spacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        }
+    }
+
+    private func stageLegend(_ name: String, _ hours: Double, _ color: Color) -> some View {
+        HStack(spacing: DS.Spacing.xs) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(name).font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
+            Text(String(format: "%.1fh", hours)).font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textSecondary)
+        }
+    }
+
     // MARK: Trend cards
 
     @ViewBuilder
     private func trendCard(_ title: String, series data: [DatedValue], unit: String,
-                           decimals: Int = 0, fixedDomain: ClosedRange<Double>? = nil) -> some View {
+                           decimals: Int = 0, fixedDomain: ClosedRange<Double>? = nil,
+                           info: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.sm) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title).dsLabel()
+                if let info { InfoPopoverButton(title: title, message: info) }
                 Spacer()
                 if let latest = data.last {
                     Text(format(latest.value, decimals: decimals) + (unit.isEmpty ? "" : " \(unit)"))
@@ -149,6 +359,9 @@ struct RecoveryView: View {
             }
             if data.count >= 2 {
                 trendChart(data, fixedDomain: fixedDomain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(title) trend")
+                    .accessibilityValue(data.suffix(7).map { format($0.value, decimals: decimals) }.joined(separator: ", "))
             } else {
                 Text("Needs a few days of Apple Watch data to chart.")
                     .font(DSFont.caption).foregroundStyle(Color.textTertiary)
@@ -197,6 +410,16 @@ struct RecoveryView: View {
 
     private func format(_ v: Double, decimals: Int) -> String { String(format: "%.\(decimals)f", v) }
 
+    /// A snug y-domain for near-constant metrics (body temp, breathing). Without it the
+    /// AreaMark's fill-to-zero forces a 0-based axis, pinning the line to the top and hiding
+    /// the small-but-meaningful deviations readiness actually scores. Pads the data range.
+    private func tightDomain(_ data: [DatedValue], minPad: Double) -> ClosedRange<Double>? {
+        let v = data.map(\.value)
+        guard let lo = v.min(), let hi = v.max() else { return nil }
+        let pad = max((hi - lo) * 0.4, minPad)
+        return (lo - pad)...(hi + pad)
+    }
+
     // MARK: Derived
 
     /// Per-day readiness computed from each day's signals vs current baselines.
@@ -204,12 +427,16 @@ struct RecoveryView: View {
         let hrv = Dictionary(series.hrv.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
         let rhr = Dictionary(series.restingHR.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
         let slp = Dictionary(series.sleepHours.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
+        let tmp = Dictionary(series.bodyTempC.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
+        let rsp = Dictionary(series.respiratoryRate.map { ($0.date, $0.value) }, uniquingKeysWith: { a, _ in a })
         let dates = Set(hrv.keys).union(rhr.keys).union(slp.keys).sorted()
         return dates.compactMap { d in
             let r = ReadinessEngine.evaluate(ReadinessInputs(
                 hrvMs: hrv[d], hrvBaselineMs: health.hrvBaseline,
                 restingHR: rhr[d], restingHRBaseline: health.restingHRBaseline,
-                sleepHours: slp[d]))
+                sleepHours: slp[d],
+                bodyTempC: tmp[d], bodyTempBaselineC: health.bodyTempBaselineC,
+                respiratoryRate: rsp[d], respiratoryRateBaseline: health.respiratoryRateBaseline))
             guard let s = r.score else { return nil }
             return DatedValue(date: d, value: Double(s))
         }
@@ -230,5 +457,8 @@ struct RecoveryView: View {
     }
     private func driverColor(_ s: Readiness.Driver.Sign) -> Color {
         switch s { case .positive: Color.success; case .negative: Color.accent; case .neutral: Color.textTertiary }
+    }
+    private func signWord(_ s: Readiness.Driver.Sign) -> String {
+        switch s { case .positive: "helping recovery"; case .negative: "hurting recovery"; case .neutral: "neutral" }
     }
 }

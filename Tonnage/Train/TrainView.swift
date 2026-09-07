@@ -8,7 +8,9 @@ import TonnageCore
 struct TrainView: View {
     @Environment(\.modelContext) private var context
     @Environment(HealthKitManager.self) private var health
+    @Environment(\.openURL) private var openURL
     @Query(sort: \Program.createdAt) private var programs: [Program]
+    @Query private var allWorkouts: [LoggedWorkout]   // for the days-since-rest training streak
 
     @AppStorage("currentBlock") private var currentBlock = 1
     // Shared with COACH so it can answer about the exact session/day on screen.
@@ -24,12 +26,24 @@ struct TrainView: View {
     // Day type is a transient mode, NOT persisted — it resets to Lift each launch so the
     // screen never gets stuck showing a rest day.
     @State private var dayType: DayType = .lift
+    /// "block:week" — when it matches the on-screen selection, this week runs as an
+    /// early deload (readiness-advised from Recovery, or manual from the block menu).
+    @AppStorage("train.deloadOverride") private var deloadOverrideKey = ""
+    // Which calendar day a rest is being logged for. Defaults to today; backdate it to
+    // record a rest you took but didn't log (e.g. yesterday). Resets to today each launch.
+    @State private var restDate: Date = .now
     @State private var expandedID: PersistentIdentifier?
+    /// Which workout has been pushed to Health, by persistent id — `@State` reverted the
+    /// confirmation on every relaunch and invited a pointless second tap.
+    @AppStorage("train.lastHealthSaveKey") private var lastHealthSaveKey = ""
     @State private var sessionSaved = false
+    @State private var saveFailed = false
     @State private var collapse: CGFloat = 0   // 0 = large title expanded, 1 = collapsed to compact bar
     @State private var showRecovery = false
+    @State private var showAddExercise = false
     @State private var showPlanBlock = false
     @State private var showReplanBlock = false
+    @State private var confirmNewBlock = false
     @State private var shareItem: ShareImageItem?
 
     private var program: Program? { programs.first }
@@ -38,7 +52,9 @@ struct TrainView: View {
         sessions.indices.contains(sessionIndex) ? sessions[sessionIndex] : nil
     }
 
-    var body: some View {
+    // Split from `body`: the screen layout and the modifier chain each stay small
+    // enough for the type-checker (one combined expression stopped compiling).
+    private var screen: some View {
         NavigationStack {
             ZStack(alignment: .top) {
                 Color.surface.ignoresSafeArea()
@@ -57,11 +73,25 @@ struct TrainView: View {
                 }
 
                 compactBar
+
+                if let pr = store.celebration {
+                    PRToast(pr: pr) { store.dismissCelebration() }
+                        .padding(.horizontal, DS.Spacing.lg)
+                        .padding(.top, DS.Spacing.sm)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(2)
+                }
             }
             .toolbar(.hidden, for: .navigationBar)
         }
+        .animation(DS.spring, value: store.celebration)
         .tint(.accent)
+    }
+
+    var body: some View {
+        screen
         .task {
+            Haptics.warmUp()                 // warm the Taptic Engine so the first tap is instant
             store.configure(context)
             selectedBlock = currentBlock
             if !sessions.indices.contains(sessionIndex) { sessionIndex = 0 }   // saved index may be stale
@@ -75,10 +105,21 @@ struct TrainView: View {
             if (store.workout?.completedSetCount ?? 0) == 0 { reload() }
         }
         .onChange(of: selectedBlock) { reload() }
+        .onChange(of: deloadOverrideKey) {            // started from Recovery's insight card
+            reload()
+            store.applySuggestedWeights()
+        }
         .onChange(of: currentBlock) { PhoneConnectivity.shared.pushContext() }   // sync active block to watch
         .onChange(of: week) { reload() }
         .onChange(of: sessionIndex) { reload() }
-        .onChange(of: dayType) { reload() }
+        .onChange(of: dayType) { old, new in
+            if old == .lift && new != .lift { restDate = .now }   // each rest-logging session starts at today
+            reload()
+        }
+        .onChange(of: restDate) {
+            guard dayType != .lift else { return }   // rest date only matters in rest mode
+            store.loadRest(block: selectedBlock, week: week, date: restDate)
+        }
         .onChange(of: sessions.count) {
             if !sessions.indices.contains(sessionIndex) { sessionIndex = 0 }
             reload()
@@ -89,13 +130,35 @@ struct TrainView: View {
         }
         .onDisappear { store.pruneIfEmpty(store.workout) }
         .sheet(isPresented: $showRecovery) { RecoveryView() }
+        .sheet(isPresented: $showAddExercise) {
+            EditExerciseSheet(store: store, exercise: nil, mode: .addCustom)
+        }
         .sheet(isPresented: $showPlanBlock) {
             PlanBlockSheet(currentBlockNumber: currentBlock) { startNewBlock() }
         }
         .sheet(isPresented: $showReplanBlock) {
             PlanBlockSheet(currentBlockNumber: currentBlock, mode: .replanCurrent) { reload() }
         }
-        .sheet(item: $shareItem) { ShareSheet(items: [$0.image]) }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.activityItem]) }
+        .confirmationDialog("Start Block \(String(format: "%02d", currentBlock + 1))?",
+                            isPresented: $confirmNewBlock, titleVisibility: .visible) {
+            Button("Start Empty Block", role: .destructive) { startNewBlock() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Moves you to a fresh empty Block \(String(format: "%02d", currentBlock + 1)), Week 1. Your current block is kept — switch back anytime from the block menu.")
+        }
+    }
+
+    /// Identifies a session for the "already saved to Health" flag — block/week/session is
+    /// stable across relaunches in a way the transient view state was not.
+    private func healthSaveKey(_ workout: LoggedWorkout) -> String {
+        "\(workout.blockNumber)-\(workout.weekNumber)-\(workout.sessionName)"
+    }
+
+    /// Names the shared card in the share sheet, e.g. "Pull B · Aug 21".
+    private func shareTitle(_ workout: LoggedWorkout) -> String {
+        let name = workout.sessionName.isEmpty ? "Workout" : workout.sessionName
+        return "\(name) · \(workout.date.formatted(.dateTime.month(.abbreviated).day()))"
     }
 
     /// Share the session you just logged as a branded card.
@@ -103,7 +166,7 @@ struct TrainView: View {
         Button {
             if let img = ShareCardRenderer.image(WorkoutShareCard(workout: workout)) {
                 Haptics.impact(.light)
-                shareItem = ShareImageItem(image: img)
+                shareItem = ShareImageItem(image: img, title: shareTitle(workout))
             }
         } label: {
             Label("Share Workout", systemImage: "square.and.arrow.up")
@@ -130,9 +193,14 @@ struct TrainView: View {
         VStack(spacing: DS.Spacing.lg) {
             // Always shown — even with no data it reads as a "Connect Apple Health"
             // prompt and keeps the Recovery screen discoverable.
-            ReadinessCard(readiness: readiness) { showRecovery = true }
+            ReadinessCard(readiness: readiness,
+                          today: TodayPlan.verdict(band: readiness.band, focus: session?.name, dayType: dayType,
+                                                   trainingStreak: FatigueEngine.trainingStreak(workouts: allWorkouts))) {
+                showRecovery = true
+            }
             switch dayType {
             case .lift:
+                if deloadActive { deloadBanner }
                 SessionStatsBar(workout: store.workout)
                 if let workout = store.workout {
                     ForEach(workout.orderedExercises, id: \.persistentModelID) { exercise in
@@ -143,6 +211,8 @@ struct TrainView: View {
                             store: store
                         )
                     }
+                    addExerciseButton
+                    workoutDateRow(workout)
                     SessionNotesField(workout: workout)
                     if workout.completedSetCount > 0 {
                         saveSessionButton(workout)
@@ -153,12 +223,98 @@ struct TrainView: View {
                 RestDayView(
                     dayType: dayType,
                     isLogged: store.workout?.dayType == dayType,
+                    date: $restDate,
                     onLog: {
-                        store.logRestDay(block: selectedBlock, week: week, dayType: dayType)
+                        store.logRestDay(block: selectedBlock, week: week, dayType: dayType, date: restDate)
+                    },
+                    onBackToWorkout: {
+                        withAnimation(DS.snappySpring) { dayType = .lift }
                     }
                 )
             }
+            // Surface the headline AI feature when the block is wrapping up, so it isn't
+            // hidden behind the block dropdown.
+            if dayType == .lift && week >= 5 { planNextBlockButton }
         }
+    }
+
+    /// Early-deload state — visible, with an obvious way out.
+    private var deloadBanner: some View {
+        HStack(spacing: DS.Spacing.sm) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Color.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("EARLY DELOAD").dsLabel()
+                Text("This week runs at ~60% loads with 4–5 in reserve. Recover hard.")
+                    .font(.system(.caption))
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("End") { setDeload(false) }
+                .font(.system(.caption, weight: .bold))
+                .foregroundStyle(Color.accent)
+                .buttonStyle(.plain)
+        }
+        .padding(DS.Spacing.sm)
+        .background(Color.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.accent.opacity(0.35), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Early deload active this week. Loads cut to about 60 percent.")
+    }
+
+    /// Lets you set the day a session was done — e.g. logging a workout you did earlier, or
+    /// re-creating one. Defaults to today; this only changes the calendar date (which day it
+    /// shows on the Last 7 Days strip / in DATA), never the block/week/session it counts toward.
+    private func workoutDateRow(_ workout: LoggedWorkout) -> some View {
+        HStack(spacing: DS.Spacing.sm) {
+            Image(systemName: "calendar")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.textTertiary)
+            Text("Workout Date").dsLabel()
+            Spacer()
+            DatePicker("", selection: Binding(get: { workout.date },
+                                              set: { workout.date = $0; store.save() }),
+                       in: ...Date.now, displayedComponents: [.date])
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .tint(.accent)
+        }
+        .padding(.horizontal, DS.Spacing.md)
+        .padding(.vertical, DS.Spacing.sm)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
+
+    /// Adds an extra lift/accessory to THIS week's session (e.g. calisthenics on Upper A).
+    /// Quick-add picks or manual entry; reverts next week like any per-week edit.
+    private var addExerciseButton: some View {
+        Button {
+            Haptics.selection()
+            showAddExercise = true
+        } label: {
+            Label("Add Exercise", systemImage: "plus.circle.fill")
+                .font(.system(.subheadline, weight: .semibold)).foregroundStyle(Color.accent)
+                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                .background(Color.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                    .strokeBorder(Color.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Add another lift or calisthenics to this session")
+    }
+
+    private var planNextBlockButton: some View {
+        Button { showPlanBlock = true } label: {
+            Label("Plan Block \(String(format: "%02d", currentBlock + 1)) with Coach", systemImage: "brain.head.profile")
+                .font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.accent)
+                .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
+                .background(Color.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                    .strokeBorder(Color.accent.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Header (large title scrolls; compact bar pins + fades in)
@@ -218,6 +374,17 @@ struct TrainView: View {
                 }
             }
             Divider()
+            if dayType == .lift && week < 5 {
+                if deloadActive {
+                    Button { setDeload(false) } label: {
+                        Label("End Early Deload", systemImage: "arrow.uturn.backward.circle")
+                    }
+                } else {
+                    Button { setDeload(true) } label: {
+                        Label("Deload This Week", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
             Button { showPlanBlock = true } label: {
                 Label("Plan Block \(String(format: "%02d", currentBlock + 1)) (Coach)",
                       systemImage: "brain.head.profile")
@@ -225,7 +392,7 @@ struct TrainView: View {
             Button { showReplanBlock = true } label: {
                 Label("Re-plan This Block (Coach)", systemImage: "arrow.triangle.2.circlepath")
             }
-            Button { startNewBlock() } label: {
+            Button(role: .destructive) { confirmNewBlock = true } label: {
                 Label("Start Empty Block", systemImage: "plus.circle")
             }
         } label: {
@@ -241,32 +408,66 @@ struct TrainView: View {
     }
 
     private func saveSessionButton(_ workout: LoggedWorkout) -> some View {
-        Button {
-            Task {
-                if !health.hasRequested { await health.requestAuthorization() }
-                await health.saveLiftingSession(start: workout.date, end: .now)
-                withAnimation(DS.spring) { sessionSaved = true }
-                Haptics.success()
+        VStack(spacing: DS.Spacing.xs) {
+            Button {
+                Task {
+                    if !health.hasRequested { await health.requestAuthorization() }
+                    // Backdated sessions: keep the Health workout on the workout's own day —
+                    // start→.now would span the backdate gap, and HealthKit hard-rejects
+                    // multi-day energy samples (uncatchable NSException).
+                    let start = workout.date
+                    let end = Calendar.current.isDateInToday(start) ? Date.now : start.addingTimeInterval(45 * 60)
+                    let ok = await health.saveLiftingSession(start: start, end: end)
+                    if ok {
+                        lastHealthSaveKey = healthSaveKey(workout)
+                        withAnimation(DS.spring) { sessionSaved = true; saveFailed = false }
+                        Haptics.success()
+                    } else {
+                        withAnimation(DS.spring) { saveFailed = true }
+                        Haptics.warning()
+                    }
+                }
+            } label: {
+                Label(sessionSaved ? "Saved to Apple Health" : "Save Session to Apple Health",
+                      systemImage: sessionSaved ? "checkmark.circle.fill" : "heart.fill")
+                    .font(.system(.subheadline, weight: .bold))
+                    .foregroundStyle(sessionSaved ? Color.success : Color.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, DS.Spacing.md)
+                    .background(
+                        RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                            .fill(sessionSaved ? Color.surfaceElevated : Color.accent)
+                    )
             }
-        } label: {
-            Label(sessionSaved ? "Saved to Apple Health" : "Save Session to Apple Health",
-                  systemImage: sessionSaved ? "checkmark.circle.fill" : "heart.fill")
-                .font(.system(.subheadline, weight: .bold))
-                .foregroundStyle(sessionSaved ? Color.success : Color.onAccent)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, DS.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                        .fill(sessionSaved ? Color.surfaceElevated : Color.accent)
-                )
+            .buttonStyle(.plain)
+            .disabled(sessionSaved)
+            if saveFailed {
+                Button {
+                    if let url = URL(string: "x-apple-health://") { openURL(url) }
+                } label: {
+                    Text("Couldn't save. Allow Workouts in Health → Sharing → Tonnage — tap to open Health.")
+                        .font(.system(.caption2)).foregroundStyle(Color.accent)
+                        .multilineTextAlignment(.center)
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(sessionSaved)
+    }
+
+    private var deloadActive: Bool { deloadOverrideKey == "\(selectedBlock):\(week)" }
+
+    private func setDeload(_ on: Bool) {
+        deloadOverrideKey = on ? "\(selectedBlock):\(week)" : ""
+        // onChange(of: deloadOverrideKey) reloads + re-prefills untouched sets.
+        if on { Haptics.success() } else { Haptics.impact(.rigid) }
     }
 
     private func reload() {
         guard let session else { return }
-        sessionSaved = false
+        // Restore the Health-save confirmation for whatever session is now on screen.
+        sessionSaved = lastHealthSaveKey == "\(selectedBlock)-\(week)-\(session.name)"
+        saveFailed = false
+        store.deloadOverridden = deloadActive
         publishFocus(session)
         switch dayType {
         case .lift:
@@ -276,7 +477,7 @@ struct TrainView: View {
                     ?? workout.orderedExercises.first?.persistentModelID
             }
         case .activeRest, .fullRest:
-            store.loadRest(block: selectedBlock, week: week)
+            store.loadRest(block: selectedBlock, week: week, date: restDate)
         }
         refreshWidget()
     }
@@ -297,12 +498,61 @@ struct TrainView: View {
     }
 }
 
+// MARK: - PR toast
+
+/// In-the-moment lifetime-PR celebration — slides in from the top when a logged set
+/// beats the exercise's best e1RM, auto-dismisses, tap to dismiss early.
+private struct PRToast: View {
+    let pr: PRCelebration
+    let onDismiss: () -> Void
+
+    var body: some View {
+        Button(action: onDismiss) {
+            HStack(spacing: DS.Spacing.sm) {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.onAccent)
+                    .symbolEffect(.bounce, options: .nonRepeating)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("LIFETIME PR")
+                        .font(.system(size: 10, weight: .heavy))
+                        .kerning(1.2)
+                        .foregroundStyle(Color.onAccent.opacity(0.85))
+                    Text("\(pr.exerciseName) — \(CoachEngine.fmt(pr.weight)) × \(pr.reps)")
+                        .font(.system(.subheadline, weight: .bold))
+                        .foregroundStyle(Color.onAccent)
+                        .lineLimit(1)
+                    Text("est. 1RM \(CoachEngine.fmt(pr.estimatedOneRM)) lb")
+                        .font(DSFont.numberSm)
+                        .foregroundStyle(Color.onAccent.opacity(0.85))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(DS.Spacing.md)
+            .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .shadow(color: Color.accent.opacity(0.45), radius: 14, y: 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Lifetime personal record: \(pr.exerciseName), \(CoachEngine.fmt(pr.weight)) pounds for \(pr.reps) reps")
+        .accessibilityHint("Tap to dismiss")
+    }
+}
+
 // MARK: - Rest day
 
 private struct RestDayView: View {
     let dayType: DayType
     let isLogged: Bool
+    @Binding var date: Date
     let onLog: () -> Void
+    let onBackToWorkout: () -> Void
+
+    private var isToday: Bool { Calendar.current.isDateInToday(date) }
+    private var dayLabel: String {
+        isToday ? "Today"
+                : date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
 
     var body: some View {
         VStack(spacing: DS.Spacing.lg) {
@@ -315,16 +565,31 @@ private struct RestDayView: View {
                 Text(dayType == .activeRest ? "Active Recovery" : "Full Rest")
                     .font(DSFont.title)
                     .foregroundStyle(Color.textPrimary)
+                // "today" is wrong once the date picker is backdated — the button label
+                // already names the real day, so the body should agree.
                 Text(dayType == .activeRest
-                     ? "Easy conditioning today — log walks or stairs in MOVE. It counts toward fatigue, not load."
+                     ? (isToday
+                        ? "Easy conditioning today — log walks or stairs in MOVE. It counts toward fatigue, not load."
+                        : "Easy conditioning — log walks or stairs in MOVE. It counts toward fatigue, not load.")
                      : "Recovery is training. Eat, sleep, hydrate — let the work catch up.")
                     .font(DSFont.callout)
                     .foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
+            // Pick the day this rest is for — defaults to today, or backdate a missed rest.
+            HStack {
+                Text("Rest Day").dsLabel()
+                Spacer()
+                DatePicker("", selection: $date, in: ...Date.now, displayedComponents: [.date])
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .tint(Color.accent)
+            }
+            .padding(.horizontal, DS.Spacing.sm)
+
             Button(action: onLog) {
-                Label(isLogged ? "Rest Logged for Today" : "Log Rest for Today",
+                Label(isLogged ? "Rest Logged for \(dayLabel)" : "Log Rest for \(dayLabel)",
                       systemImage: isLogged ? "checkmark.circle.fill" : "square.and.pencil")
                     .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(isLogged ? Color.success : Color.onAccent)
@@ -337,6 +602,22 @@ private struct RestDayView: View {
             }
             .buttonStyle(.plain)
             .disabled(isLogged)
+
+            // Clear way back to logging lifts — subtle before you log, the obvious next
+            // step (accent) once the rest is logged, so it's never a dead-end.
+            Button(action: onBackToWorkout) {
+                Label("Back to Workout", systemImage: "arrow.uturn.backward")
+                    .font(.system(.subheadline, weight: .bold))
+                    .foregroundStyle(isLogged ? Color.onAccent : Color.textSecondary)
+                    .frame(maxWidth: isLogged ? .infinity : nil)
+                    .padding(.horizontal, DS.Spacing.lg)
+                    .padding(.vertical, DS.Spacing.md)
+                    .background(
+                        RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                            .fill(isLogged ? Color.accent : Color.clear)
+                    )
+            }
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity, minHeight: 380)
         .padding(DS.Spacing.lg)
@@ -347,6 +628,8 @@ private struct RestDayView: View {
 
 private struct SessionNotesField: View {
     @Bindable var workout: LoggedWorkout
+    @Environment(\.modelContext) private var context
+    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.sm) {
@@ -356,12 +639,24 @@ private struct SessionNotesField: View {
                 .font(DSFont.body)
                 .foregroundStyle(Color.textPrimary)
                 .lineLimit(2...6)
+                .focused($focused)
                 .padding(DS.Spacing.md)
                 .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
-                        .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline)
+                        .strokeBorder(focused ? Color.accent : Color.hairline, lineWidth: focused ? 1.5 : DS.Stroke.hairline)
                 )
+                .toolbar {
+                    if focused {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") { focused = false }.fontWeight(.bold)
+                        }
+                    }
+                }
+        }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { context.saveOrReport() }   // persist (+ visible exit) when editing ends
         }
     }
 }

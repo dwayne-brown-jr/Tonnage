@@ -75,8 +75,8 @@ public enum BodyScanEstimator {
         else { return nil }
 
         let estimates: [MeasurementEstimate] = (raw.estimates ?? []).compactMap { e in
-            guard let type = MeasurementType.loose(e.type), e.value > 0 else { return nil }
-            return MeasurementEstimate(type: type, value: e.value)
+            guard let type = MeasurementType.loose(e.type), let v = e.value, v > 0 else { return nil }
+            return MeasurementEstimate(type: type, value: v)
         }
         // Keep one per type, in canonical order (drops any duplicate the model listed).
         let deduped = MeasurementType.allCases.compactMap { t in
@@ -91,7 +91,7 @@ public enum BodyScanEstimator {
     /// Lenient decode target — tolerates unknown type strings (filtered later) and
     /// missing optional fields.
     private struct RawScan: Decodable {
-        struct RawEstimate: Decodable { let type: String; let value: Double }
+        struct RawEstimate: Decodable { let type: String; let value: Double? }
         let estimates: [RawEstimate]?
         let confidence: String?
         let note: String?

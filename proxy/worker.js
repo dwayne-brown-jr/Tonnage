@@ -8,7 +8,12 @@
 //   QUOTA              (KV)      namespace binding for the per-device counters
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ALLOWED_MODELS = new Set(["claude-haiku-4-5", "claude-opus-4-8"]);
+// Model aliases the shared key may be used with. A pinned/dated id for one of these
+// (e.g. "claude-haiku-4-5-20251001") is accepted too — the app sends aliases today, but a
+// pin would otherwise 400 every proxy user with no obvious cause. The date suffix is the
+// only thing allowed to differ, so this can't widen the set to another model.
+const ALLOWED_MODELS = ["claude-haiku-4-5", "claude-opus-4-8"];
+const DATE_SUFFIX = /^-\d{8}$/;
 const MAX_TOKENS_CAP = 4096;
 
 export default {
@@ -31,7 +36,7 @@ export default {
     } catch {
       return json({ error: { message: "Bad request" } }, 400);
     }
-    if (!ALLOWED_MODELS.has(body?.model)) {
+    if (!isAllowedModel(body?.model)) {
       return json({ error: { message: "Unsupported model" } }, 400);
     }
     if (typeof body.max_tokens === "number") {
@@ -85,6 +90,16 @@ export default {
     return new Response(upstream.body, { status: upstream.status, headers });
   },
 };
+
+/// True for an allowed model alias, or that alias pinned to a release date.
+function isAllowedModel(model) {
+  if (typeof model !== "string") return false;
+  return ALLOWED_MODELS.some((allowed) => {
+    if (model === allowed) return true;
+    if (!model.startsWith(allowed)) return false;
+    return DATE_SUFFIX.test(model.slice(allowed.length));
+  });
+}
 
 function json(obj, status, extraHeaders = {}) {
   return new Response(JSON.stringify(obj), {

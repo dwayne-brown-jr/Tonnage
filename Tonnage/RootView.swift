@@ -57,6 +57,11 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
         }
+        .onOpenURL { url in
+            // tonnage://today — Tonnage Fuel's way back to the session on screen.
+            guard url.scheme?.lowercased() == "tonnage" else { return }
+            if (url.host()?.lowercased() ?? "today") == "today" { selection = .train }
+        }
         .onChange(of: scenePhase) { _, phase in
             restTimer.handleScenePhase(phase)
             // Re-read recovery on foreground so readiness reflects last night's data once a ring/

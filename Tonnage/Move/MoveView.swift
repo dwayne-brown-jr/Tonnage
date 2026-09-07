@@ -11,6 +11,10 @@ struct MoveView: View {
     @State private var entryKind: ActivityKind?
     @State private var importing = false
     @State private var importMessage: String?
+    /// Set when an import came back empty, revealing the force-re-import escape hatch.
+    @State private var importCameBackEmpty = false
+    /// Set when Health returned no workouts at all — read access is almost certainly off.
+    @State private var importBlocked = false
     @State private var pendingDelete: Activity?
     @State private var selectedActivity: Activity?
 
@@ -98,14 +102,7 @@ struct MoveView: View {
                 guard !importing else { return }
                 importing = true
                 importMessage = nil
-                Task {
-                    let n = await health.importExternalWorkouts(into: context)
-                    importMessage = n > 0
-                        ? "Imported \(n) workout\(n == 1 ? "" : "s") from Apple Health."
-                        : "No new cardio found in Apple Health."
-                    importing = false
-                    Haptics.success()
-                }
+                Task { await runImport() }
             } label: {
                 HStack(spacing: DS.Spacing.sm) {
                     if importing {
@@ -130,9 +127,73 @@ struct MoveView: View {
             .buttonStyle(.plain)
             .disabled(importing)
 
-            Text(importMessage ?? "Pulls cardio (walks, runs, rides, stairs) from Apple Fitness and other apps. Strength workouts stay in TRAIN.")
-                .font(.system(.caption2))
-                .foregroundStyle(Color.textTertiary)
+            if let importMessage {
+                // A result has to look different from the helper text it replaces — the old
+                // version swapped one dim caption for another, so a finished import was
+                // indistinguishable from nothing having happened.
+                HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
+                    Image(systemName: importBlocked ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(importBlocked ? Color.danger : Color.success)
+                    Text(importMessage)
+                        .font(.system(.caption, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 2)
+                .transition(.opacity)
+            } else {
+                Text("Pulls cardio (walks, runs, rides, stairs) from Apple Fitness and other apps. Strength workouts stay in TRAIN.")
+                    .font(.system(.caption2))
+                    .foregroundStyle(Color.textTertiary)
+            }
+
+            if importCameBackEmpty && !importing {
+                Button {
+                    Task { await runImport(forgettingSeen: true) }
+                } label: {
+                    Text("Nothing showing up? Re-import everything")
+                        .font(.system(.caption, weight: .semibold))
+                        .foregroundStyle(Color.accent)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    /// Runs the import and reports what actually happened. `forgettingSeen` clears the
+    /// imported-UUID memory first, which is the recovery path for anyone whose list was
+    /// poisoned by the older build that marked failed saves as seen.
+    private func runImport(forgettingSeen: Bool = false) async {
+        let outcome = await health.importExternalWorkouts(into: context, forgettingSeen: forgettingSeen)
+        withAnimation(DS.spring) {
+            switch outcome {
+            case .imported(let n):
+                importMessage = "Imported \(n) workout\(n == 1 ? "" : "s") from Apple Health."
+                importCameBackEmpty = false
+                importBlocked = false
+                Haptics.success()
+            case .nothingNew:
+                importMessage = forgettingSeen
+                    ? "Still nothing new — Apple Health has no cardio Tonnage can add."
+                    : "No new cardio found in Apple Health."
+                importCameBackEmpty = true
+                importBlocked = false
+                Haptics.warning()
+            case .noWorkoutsVisible:
+                importMessage = "Tonnage can't read workouts from Apple Health. Turn on Workouts in Settings › Health › Data Access & Devices › Tonnage."
+                importCameBackEmpty = false
+                importBlocked = true
+                Haptics.warning()
+            case .unavailable:
+                importMessage = "Couldn't reach Apple Health. Try again in a moment."
+                importCameBackEmpty = false
+                importBlocked = true
+                Haptics.warning()
+            }
+            importing = false
         }
     }
 

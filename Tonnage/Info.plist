@@ -6,5 +6,24 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<!-- Tonnage answers tonnage://today so Tonnage Fuel can jump back to the session. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.dwayne.tonnage</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tonnage</string>
+			</array>
+		</dict>
+	</array>
+	<!-- Required before canOpenURL can tell us whether Tonnage Fuel is installed. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tonnagefuel</string>
+	</array>
 </dict>
 </plist>

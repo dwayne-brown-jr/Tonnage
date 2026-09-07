@@ -42,6 +42,9 @@ final class TrainStore {
     /// When true (user started an early deload for this block+week), the Coach's Call
     /// treats this week like W5: ~60% loads, big reserve. Set by TrainView.
     var deloadOverridden = false
+    /// How long you've been away, recomputed each load. Drives the returning-lifter load
+    /// scaling in the Coach's Call and the welcome-back card on TRAIN.
+    private(set) var layoff: Layoff?
 
     /// Non-nil right after a logged set beats the lifetime e1RM — TrainView shows a toast.
     private(set) var celebration: PRCelebration?
@@ -60,6 +63,7 @@ final class TrainStore {
     func loadLift(block: Int, week: Int, session: SessionTemplate) {
         guard let context else { return }
         pruneIfEmpty(workout)
+        refreshLayoff()
 
         let w = findOrCreate(block: block, week: week, session: session, dayType: .lift)
 
@@ -423,11 +427,21 @@ final class TrainStore {
         guidance = g
     }
 
+    /// Recomputes the training gap from the full log. Deliberately excludes the session
+    /// being opened right now — an empty shell created by navigating here isn't training,
+    /// and counting it would erase the very layoff we're trying to detect.
+    private func refreshLayoff() {
+        guard let context else { layoff = nil; return }
+        let all = (try? context.fetch(FetchDescriptor<LoggedWorkout>())) ?? []
+        layoff = LayoffEngine.assess(workouts: all)
+    }
+
     private func guidance(name: String, repRange: String, isCardio: Bool, block: Int, week: Int, sessionName: String) -> ExerciseGuidance {
         let reference = lastReference(named: name, block: block, beforeWeek: week, sessionName: sessionName)
         let call = CoachEngine.call(week: week, last: reference.top, repRange: repRange, isCardio: isCardio,
                                     holdProgression: readinessHoldsProgression,
-                                    forceDeload: deloadOverridden)
+                                    forceDeload: deloadOverridden,
+                                    layoff: layoff)
         return ExerciseGuidance(call: call, last: reference.top, lastSets: reference.sets)
     }
 
@@ -436,7 +450,7 @@ final class TrainStore {
     private func ghostSets(of exercise: LoggedExercise) -> [LastTopSet] {
         exercise.orderedSets
             .filter { $0.completed && !$0.isWarmup && !$0.isDropSet }
-            .map { LastTopSet(weight: $0.weight, reps: $0.reps, rpe: $0.rpe) }
+            .map { LastTopSet(weight: $0.weight, reps: $0.reps, rpe: $0.rpe, date: exercise.workout?.date) }
     }
 
     /// Within a block, compares to last week's session. On a new block's Week 1, carries
@@ -454,7 +468,7 @@ final class TrainStore {
             guard let previous = (try? context.fetch(descriptor))?.first,
                   let exercise = previous.exercises?.first(where: { $0.name == name }),
                   let top = exercise.topSet else { return (nil, []) }
-            return (LastTopSet(weight: top.weight, reps: top.reps, rpe: top.rpe), ghostSets(of: exercise))
+            return (LastTopSet(weight: top.weight, reps: top.reps, rpe: top.rpe, date: previous.date), ghostSets(of: exercise))
         }
 
         // Week 1 of a later block → best top set from the previous block; ghosts from the
@@ -470,7 +484,7 @@ final class TrainStore {
         let latestWithExercise = prior.sorted { $0.date > $1.date }
             .compactMap { $0.exercises?.first(where: { $0.name == name }) }
             .first { !ghostSets(of: $0).isEmpty }
-        return (LastTopSet(weight: best.weight, reps: best.reps, rpe: best.rpe),
+        return (LastTopSet(weight: best.weight, reps: best.reps, rpe: best.rpe, date: best.exercise?.workout?.date),
                 latestWithExercise.map(ghostSets(of:)) ?? [])
     }
 }

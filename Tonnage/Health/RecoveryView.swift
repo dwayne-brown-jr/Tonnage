@@ -10,6 +10,7 @@ struct RecoveryView: View {
     @Environment(HealthKitManager.self) private var health
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Query(sort: \LoggedWorkout.weekNumber) private var workouts: [LoggedWorkout]
     @AppStorage("currentBlock") private var currentBlock = 1
     @AppStorage("train.week") private var trainWeek = 1
@@ -49,7 +50,7 @@ struct RecoveryView: View {
         NavigationStack {
             ZStack {
                 Color.surface.ignoresSafeArea()
-                ScrollView {
+                ScrollView(.vertical) {
                     VStack(spacing: DS.Spacing.lg) {
                         header
                         if !health.hasRequested && readiness.band == .unknown {
@@ -320,11 +321,20 @@ struct RecoveryView: View {
                 }
                 .frame(height: 10)
                 .clipShape(Capsule())
-                HStack(spacing: DS.Spacing.lg) {
-                    stageLegend("Deep", s.deep, Color.accent)
-                    stageLegend("REM", s.rem, Color.success)
-                    stageLegend("Core", s.core, Color.textSecondary)
-                    Spacer(minLength: 0)
+                // Three legend entries side by side can't fit once the type gets large —
+                // they were wrapping mid-word into "De ep 1. 4h". Stack them instead.
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                        stageLegend("Deep", s.deep, Color.accent)
+                        stageLegend("REM", s.rem, Color.success)
+                        stageLegend("Core", s.core, Color.textSecondary)
+                    }
+                } else {
+                    HStack(spacing: DS.Spacing.sm) {
+                        stageLegend("Deep", s.deep, Color.accent)
+                        stageLegend("REM", s.rem, Color.success)
+                        stageLegend("Core", s.core, Color.textSecondary)
+                    }
                 }
             }
             .padding(DS.Spacing.lg)
@@ -337,8 +347,13 @@ struct RecoveryView: View {
         HStack(spacing: DS.Spacing.xs) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(name).font(.system(.caption2, weight: .semibold)).foregroundStyle(Color.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(String(format: "%.1fh", hours)).font(DSFont.numberSm).monospacedDigit().foregroundStyle(Color.textSecondary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
         }
+        // Share the row evenly so no entry has to truncate its hours.
+        .frame(maxWidth: typeSize.isAccessibilitySize ? nil : .infinity, alignment: .leading)
     }
 
     // MARK: Trend cards
@@ -400,6 +415,11 @@ struct RecoveryView: View {
             }
         }
         .frame(height: 150)
+        // AreaMark fills down to zero. `tightDomain` deliberately excludes zero for the
+        // near-constant metrics, so that fill renders well below the plot rect — and
+        // unclipped it paints over whatever card follows, sliding across neighbours as you
+        // scroll. Clip it to the frame it was given.
+        .clipped()
 
         if let domain = fixedDomain {
             chart.chartYScale(domain: domain)

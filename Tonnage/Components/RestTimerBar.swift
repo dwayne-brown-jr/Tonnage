@@ -22,7 +22,9 @@ struct RestTimerBar: View {
         }
         .padding(.horizontal, DS.Spacing.lg)
         .padding(.vertical, DS.Spacing.sm)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous))
+        // Opaque top step, not a material: the bar floats over cards, and a blur at card
+        // brightness let the content scrolling beneath read through at the same level.
+        .background(Color.surfaceElevated2, in: RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous)
                 .strokeBorder(Color.accent.opacity(0.45), lineWidth: 1)
@@ -39,7 +41,7 @@ struct RestTimerBar: View {
 
     private var ring: some View {
         ZStack {
-            Circle().stroke(Color.surfaceElevated2, lineWidth: 6)
+            Circle().stroke(Color.surfaceElevated, lineWidth: 6)   // track recessed into the bar
             Circle()
                 .trim(from: 0, to: timer.phase == .done ? 1 : timer.progress)
                 .stroke(Color.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))

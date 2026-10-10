@@ -80,7 +80,7 @@ struct SplitPickerSheet: View {
                     Text(preset.label).font(.system(.headline, weight: .bold)).foregroundStyle(Color.textPrimary)
                     if preset == current {
                         Text("CURRENT").font(.system(.caption2, weight: .heavy)).kerning(0.5)
-                            .foregroundStyle(Color.textTertiary)
+                            .foregroundStyle(Color.textSecondary)
                             .padding(.horizontal, 5).padding(.vertical, 2)
                             .background(Capsule().fill(Color.surfaceElevated2))
                     }

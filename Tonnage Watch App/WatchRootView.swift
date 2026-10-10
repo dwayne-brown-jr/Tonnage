@@ -50,7 +50,7 @@ struct WatchRootView: View {
     private var syncRow: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(conn.reachable ? Color.green : Color.gray)
+                .fill(conn.reachable ? Color.success : Color.textTertiary)
                 .frame(width: 6, height: 6)
             Text(syncStatus)
                 .font(.system(size: 11))

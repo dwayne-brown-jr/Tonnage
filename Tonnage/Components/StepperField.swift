@@ -76,7 +76,7 @@ struct StepperField: View {
                     .font(.system(.caption2, weight: .semibold))
                     .textCase(.uppercase)
                     .kerning(0.5)
-                    .foregroundStyle(Color.textTertiary)
+                    .foregroundStyle(Color.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
             }

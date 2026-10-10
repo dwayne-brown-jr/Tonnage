@@ -65,11 +65,11 @@ struct ProfileSetupView: View {
                     } label: {
                         Text(finishTitle)
                             .font(.system(.headline, weight: .bold))
-                            .foregroundStyle(Color.onAccent)
+                            .foregroundStyle(canFinish ? Color.onAccent : Color.textSecondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, DS.Spacing.md)
-                            .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
-                            .opacity(canFinish ? 1 : 0.5)
+                            .background(canFinish ? Color.accent : Color.surfaceElevated2,
+                                        in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }

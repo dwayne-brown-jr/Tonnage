@@ -43,7 +43,7 @@ struct TimeStepperField: View {
                     .font(.system(.caption2, weight: .semibold))
                     .textCase(.uppercase)
                     .kerning(0.5)
-                    .foregroundStyle(Color.textTertiary)
+                    .foregroundStyle(Color.textSecondary)
             }
             .frame(minWidth: 56)
             .padding(.vertical, DS.Spacing.sm)

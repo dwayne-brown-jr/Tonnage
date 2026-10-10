@@ -8,7 +8,7 @@
 // Fixture update (audit fixes, Oct 2026): the worker now requires an app token, so the
 // env carries APP_TOKEN and every request sends it unless a test overrides the header.
 // A header given as `undefined` is omitted rather than sent as the string "undefined".
-// Assertions are unchanged.
+// Three quota assertions now expect 429 (see the comment above them).
 import { pathToFileURL, fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
@@ -110,9 +110,12 @@ freshEnv({ DAILY_LIMIT: "3" });
 for (let k = 1; k <= 3; k++) await run(`quota call ${k}/3`, req(), i => i.status === 200 && i.quota === String(3 - k));
 await run("quota call 4/3 -> 429", req(), i => i.status === 429 && i.quota === "0" && i.upstreamCalls === 0);
 await run("same device, rotated x-device-id -> bypass?", req({ headers: { "x-device-id": "dev-A-2" } }), i => i.status === 429);
-await run("missing x-device-id -> shared 'anon' bucket", req({ headers: { "x-device-id": "" } }), i => i.status === 200, () => `anon key used: ${[...env.QUOTA._m.keys()].some(k => k.startsWith("quota:anon:"))}`);
-await run("x-device-id 129+ chars truncated to 128 (collides w/ prefix)", req({ headers: { "x-device-id": "Z".repeat(300) } }), i => i.status === 200, () => `key len: ${[...env.QUOTA._m.keys()].find(k => k.includes("ZZZ"))?.length ?? "no device-keyed entry"}`);
-await run("x-device-id with ':' delimiter injection", req({ headers: { "x-device-id": "dev-A:2099-01-01" } }), i => i.status === 200, () => [...env.QUOTA._m.keys()].join(" | "));
+// The quota belongs to the network, not the client-chosen x-device-id, so none of these
+// header variations buys a fresh allowance once the network's is spent (changed from 200
+// with the audit fixes; see AUDIT-2026-10.md).
+await run("missing x-device-id -> no fresh allowance", req({ headers: { "x-device-id": "" } }), i => i.status === 429 && i.upstreamCalls === 0, () => `anon key used: ${[...env.QUOTA._m.keys()].some(k => k.startsWith("quota:anon:"))}`);
+await run("x-device-id 300 chars -> no fresh allowance", req({ headers: { "x-device-id": "Z".repeat(300) } }), i => i.status === 429 && i.upstreamCalls === 0, () => `key len: ${[...env.QUOTA._m.keys()].find(k => k.includes("ZZZ"))?.length ?? "no device-keyed entry"}`);
+await run("x-device-id with ':' delimiter injection -> no fresh allowance", req({ headers: { "x-device-id": "dev-A:2099-01-01" } }), i => i.status === 429 && i.upstreamCalls === 0, () => [...env.QUOTA._m.keys()].join(" | "));
 nowOffsetMs = 24 * 3600 * 1000;
 await run("day rollover (+24h) dev-A resets", req(), i => i.status === 200 && i.quota === "2");
 nowOffsetMs = 0;

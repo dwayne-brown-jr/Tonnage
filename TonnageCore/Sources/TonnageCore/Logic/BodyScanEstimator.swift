@@ -66,15 +66,9 @@ public enum BodyScanEstimator {
     // MARK: Parsing
 
     public static func parse(response: String) -> BodyScanResult? {
-        guard let start = response.range(of: "<measurements>"),
-              let end = response.range(of: "</measurements>", range: start.upperBound..<response.endIndex)
-        else { return nil }
-        let json = response[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let data = json.data(using: .utf8),
-              let raw = try? JSONDecoder().decode(RawScan.self, from: data)
-        else { return nil }
+        guard let raw = AIResponse.decode(RawScan.self, from: response, tag: "measurements") else { return nil }
 
-        let estimates: [MeasurementEstimate] = (raw.estimates ?? []).compactMap { e in
+        let estimates: [MeasurementEstimate] = (raw.estimates?.elements ?? []).compactMap { e in
             guard let type = MeasurementType.loose(e.type), let v = e.value, v > 0 else { return nil }
             return MeasurementEstimate(type: type, value: v)
         }
@@ -92,7 +86,7 @@ public enum BodyScanEstimator {
     /// missing optional fields.
     private struct RawScan: Decodable {
         struct RawEstimate: Decodable { let type: String; let value: Double? }
-        let estimates: [RawEstimate]?
+        let estimates: Lossy<RawEstimate>?
         let confidence: String?
         let note: String?
     }

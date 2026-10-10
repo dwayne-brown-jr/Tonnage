@@ -35,10 +35,11 @@ public struct ExerciseDirections: Sendable, Equatable {
 /// name-based so it also works for ad-hoc / custom exercises.
 public enum ExerciseLibrary {
 
-    /// Which metrics to log for an exercise. Strength → weight/reps/rpe.
-    /// Cardio → inferred from the movement (stairs → flights+time, bike → time+distance, …).
+    /// Which metrics to log for an exercise. Strength → weight/reps/rpe; timed holds
+    /// (planks, hangs) → time. Cardio → inferred from the movement (stairs → flights+time,
+    /// bike → time+distance, …).
     public static func metrics(for name: String, isCardio: Bool) -> [SetMetric] {
-        guard isCardio else { return [.weight, .reps, .rpe] }
+        guard isCardio else { return isTimedHold(name) ? [.time] : [.weight, .reps, .rpe] }
         let n = name.lowercased()
         if n.contains("stair") || n.contains("stadium") || n.contains("step mill") {
             return [.flights, .time]

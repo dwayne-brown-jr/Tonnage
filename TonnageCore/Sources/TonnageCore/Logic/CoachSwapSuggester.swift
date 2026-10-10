@@ -28,14 +28,10 @@ public enum CoachSwapSuggester {
         return s
     }
 
-    /// Extract the exercise names from the `<swaps>` array. Trims, de-dupes, caps at 6.
+    /// Extract the exercise names from the `<swaps>` array. Tolerates code fences, trailing
+    /// commas, a cut-off reply and non-string items. Trims, de-dupes, caps at 6.
     public static func parse(_ response: String) -> [String] {
-        guard let start = response.range(of: "<swaps>"),
-              let end = response.range(of: "</swaps>", range: start.upperBound..<response.endIndex)
-        else { return [] }
-        let json = response[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let data = json.data(using: .utf8),
-              let names = try? JSONDecoder().decode([String].self, from: data)
+        guard let names = AIResponse.decode(Lossy<String>.self, from: response, tag: "swaps")?.elements
         else { return [] }
 
         var seen = Set<String>()

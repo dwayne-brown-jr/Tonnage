@@ -126,16 +126,15 @@ public enum CoachBlockPlanner {
 
     // MARK: Response parsing
 
-    /// Extract the JSON between `<block_plan>` tags and decode it. Returns nil if the
-    /// tags are missing or the JSON doesn't match the schema — caller surfaces that as
-    /// "couldn't parse, regenerate?"
+    /// Extract the JSON between `<block_plan>` tags and decode it. Tolerates code fences,
+    /// trailing commas and a cut-off reply; a malformed session or exercise is dropped
+    /// rather than sinking the whole plan. Returns nil if nothing usable came back —
+    /// caller surfaces that as "couldn't parse, regenerate?". Run the result through
+    /// `BlockPlanValidator` before showing it.
     public static func parse(response: String) -> BlockPlan? {
-        guard let start = response.range(of: "<block_plan>"),
-              let end = response.range(of: "</block_plan>", range: start.upperBound..<response.endIndex)
-        else { return nil }
-        let json = response[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let data = json.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(BlockPlan.self, from: data)
+        guard let plan = AIResponse.decode(BlockPlan.self, from: response, tag: "block_plan"),
+              !plan.sessions.isEmpty else { return nil }
+        return plan
     }
 
     // MARK: Helpers

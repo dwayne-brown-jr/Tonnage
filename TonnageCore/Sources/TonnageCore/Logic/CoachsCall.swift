@@ -60,15 +60,39 @@ public struct NextSetCue: Sendable, Equatable {
 /// RAMP first (W1), RPE-driven progression (W2–4), deload (W5).
 public enum CoachEngine {
 
+    /// `load` decides jump sizes and the lightest loadable weight (the empty bar for
+    /// barbells); `.standard` keeps flat 5 lb jumps. A top set at 0 lb is a bodyweight
+    /// set and progresses reps, not load. Reps follow double progression: they climb
+    /// toward the top of `repRange`, and once a set reaches it the call adds load and
+    /// resets to the bottom.
     public static func call(week: Int, last: LastTopSet?, repRange: String, isCardio: Bool,
+                            isTimed: Bool = false, load: LoadProfile = .standard,
                             holdProgression: Bool = false, forceDeload: Bool = false,
                             layoff: Layoff? = nil) -> CoachsCall {
         if isCardio {
             return CoachsCall(headline: "Easy effort — a finisher, not a test.",
                               suggestedWeight: nil, suggestedReps: nil, emphasis: .neutral)
         }
+        if isTimed {
+            return CoachsCall(headline: "Timed hold — add 5–10 s once the last one felt solid.",
+                              suggestedWeight: nil, suggestedReps: nil, emphasis: .neutral)
+        }
 
         let lowReps = lowRep(of: repRange)
+        let topReps = highRep(of: repRange)
+        /// Keeps a carried-over rep count inside the prescribed range.
+        func inRange(_ reps: Int) -> Int {
+            guard lowReps > 0, let topReps else { return reps }
+            return min(max(reps, lowReps), topReps)
+        }
+        /// A reduced load (deload, layoff), rounded to something loadable.
+        func scaled(_ weight: Double, by fraction: Double) -> Double {
+            weight > 0 ? load.rounded(weight * fraction) : 0
+        }
+        /// Bodyweight sets have no load to cut, so a deload trims reps instead.
+        func deloadReps(_ last: LastTopSet) -> Int {
+            last.weight > 0 ? inRange(last.reps) : max(1, Int((Double(last.reps) * 0.6).rounded()))
+        }
 
         // Coming back from real time off overrides the week's normal progression — the last
         // top set is stale, so where you are in the block matters less than how long you've
@@ -76,21 +100,24 @@ public enum CoachEngine {
         // an explicit deload would.
         if let layoff, layoff.isSignificant, let last {
             let multiplier = forceDeload ? min(layoff.loadMultiplier, 0.6) : layoff.loadMultiplier
-            let w = roundToStep(last.weight * multiplier, step: 5)
+            let w = scaled(last.weight, by: multiplier)
+            let start = last.weight > 0 ? "start near \(fmt(w)) lb (~\(Int((multiplier * 100).rounded()))%)"
+                                         : "start with ~\(Int((multiplier * 100).rounded()))% of your reps"
+            let reps = last.weight > 0 ? inRange(last.reps) : max(1, Int((Double(last.reps) * multiplier).rounded()))
             return CoachsCall(
-                headline: "Back after \(layoff.summary) — start near \(fmt(w)) lb (~\(Int((multiplier * 100).rounded()))%) and rebuild.",
+                headline: "Back after \(layoff.summary) — \(start) and rebuild.",
                 suggestedWeight: w,
-                suggestedReps: last.reps,
+                suggestedReps: reps,
                 emphasis: .deload)
         }
 
         // Early deload (readiness-triggered or manual) — treat this week like W5
         // regardless of where the calendar says you are.
         if forceDeload && week < 5 {
-            let w = last.map { roundToStep($0.weight * 0.6, step: 5) }
+            let w = last.map { scaled($0.weight, by: 0.6) }
             return CoachsCall(headline: "Early deload — ~60% load, leave 4–5 in reserve. Recover, don't grind.",
                               suggestedWeight: w,
-                              suggestedReps: last?.reps ?? lowReps,
+                              suggestedReps: last.map(deloadReps) ?? lowReps,
                               emphasis: .deload)
         }
 
@@ -98,16 +125,16 @@ public enum CoachEngine {
         if week <= 1 {
             return CoachsCall(headline: "Ramp week — ease in, leave 3–4 reps in the tank.",
                               suggestedWeight: last?.weight,
-                              suggestedReps: last?.reps ?? lowReps,
+                              suggestedReps: last.map { inRange($0.reps) } ?? lowReps,
                               emphasis: .ramp)
         }
 
         // Week 5 — deload to ~60%.
         if week >= 5 {
-            let w = last.map { roundToStep($0.weight * 0.6, step: 5) }
+            let w = last.map { scaled($0.weight, by: 0.6) }
             return CoachsCall(headline: "Deload — ~60% load, leave 4–5 in reserve. Stay crisp, don't grind.",
                               suggestedWeight: w,
-                              suggestedReps: last?.reps ?? lowReps,
+                              suggestedReps: last.map(deloadReps) ?? lowReps,
                               emphasis: .deload)
         }
 
@@ -123,38 +150,69 @@ public enum CoachEngine {
                               suggestedWeight: last.weight, suggestedReps: last.reps, emphasis: .hold)
         }
 
+        // Bodyweight (logged at 0 lb) — progress reps. At the top of the range the next
+        // step is load or a harder variation, which is the lifter's call, not a number.
+        if last.weight <= 0 {
+            if let topReps, last.reps >= topReps {
+                return CoachsCall(headline: "Top of the range at \(last.reps) — add load (belt or vest) or a harder variation.",
+                                  suggestedWeight: 0, suggestedReps: topReps, emphasis: .progress)
+            }
+            if let rpe = last.rpe, rpe >= 9.5 {
+                return CoachsCall(headline: "All-out last week — match \(last.reps) reps with cleaner form.",
+                                  suggestedWeight: 0, suggestedReps: last.reps, emphasis: .hold)
+            }
+            let reps = topReps.map { min(last.reps + 1, $0) } ?? last.reps + 1
+            return CoachsCall(headline: "Bodyweight — add a rep: aim for \(reps).",
+                              suggestedWeight: 0, suggestedReps: reps, emphasis: .progress)
+        }
+
+        let step = fmt(load.increment(from: last.weight))
+        let heavier = load.nextWeight(after: last.weight)
+        // Double progression: reaching the top of the range earns load and resets reps.
+        if let topReps, lowReps > 0, last.reps >= topReps {
+            return CoachsCall(headline: "Topped the range at \(last.reps) reps — add \(step) lb, reset to \(lowReps).",
+                              suggestedWeight: heavier, suggestedReps: lowReps, emphasis: .progress)
+        }
+
         guard let rpe = last.rpe else {
-            let w = roundToStep(last.weight + 5, step: 5)
-            return CoachsCall(headline: "Last week \(fmt(last.weight))×\(last.reps) — add ~5 lb if it moved well.",
-                              suggestedWeight: w, suggestedReps: last.reps, emphasis: .progress)
+            return CoachsCall(headline: "Last week \(fmt(last.weight))×\(last.reps) — add ~\(step) lb if it moved well.",
+                              suggestedWeight: heavier, suggestedReps: inRange(last.reps), emphasis: .progress)
         }
 
         switch rpe {
         case ..<7.0001:
             // ≥3 reps in reserve → add load.
-            let w = roundToStep(last.weight + 5, step: 5)
-            return CoachsCall(headline: "Last week left \(repsLeftLabel(fromRPE: rpe)) in the tank — add 5 lb.",
-                              suggestedWeight: w, suggestedReps: last.reps, emphasis: .progress)
+            return CoachsCall(headline: "Last week left \(repsLeftLabel(fromRPE: rpe)) in the tank — add \(step) lb.",
+                              suggestedWeight: heavier, suggestedReps: inRange(last.reps), emphasis: .progress)
         case ..<8.5001:
-            // ~2 reps in reserve → on target, +5 lb or +1 rep.
-            let w = roundToStep(last.weight + 5, step: 5)
-            return CoachsCall(headline: "On target (\(repsLeftLabel(fromRPE: rpe)) left) — add 5 lb, or hold and add a rep.",
-                              suggestedWeight: w, suggestedReps: last.reps, emphasis: .progress)
+            // ~2 reps in reserve → on target, add load or a rep.
+            return CoachsCall(headline: "On target (\(repsLeftLabel(fromRPE: rpe)) left) — add \(step) lb, or hold and add a rep.",
+                              suggestedWeight: heavier, suggestedReps: inRange(last.reps), emphasis: .progress)
         default:
-            // 0–1 reps in reserve → near max, hold the weight and chase a rep.
+            // 0–1 reps in reserve → near max, hold the weight and chase a rep (never past
+            // the top of the range — the branch above handles reaching it).
+            let reps = topReps.map { min(last.reps + 1, $0) } ?? last.reps + 1
             return CoachsCall(headline: "Tough last week (\(repsLeftLabel(fromRPE: rpe)) left) — hold \(fmt(last.weight)) lb, chase +1 rep.",
-                              suggestedWeight: last.weight, suggestedReps: last.reps + 1, emphasis: .hold)
+                              suggestedWeight: last.weight, suggestedReps: reps, emphasis: .hold)
         }
     }
 
     // MARK: Set-to-set autoregulation
 
+    /// The range an RPE target can sensibly take. Anything outside it (an AI plan's "12",
+    /// a typo'd "80") is clamped, so it can't drive the set-to-set cue off a cliff.
+    public static let rpeTargetRange: ClosedRange<Double> = 5...10
+
     /// Per-set RPE targets parsed from a target string: "7→8→8" → [7, 8, 8];
-    /// "8" → [8]; "9" → [9]. Empty for non-numeric targets (e.g. "easy").
+    /// "8" → [8]; "9" → [9]. Empty for non-numeric targets (e.g. "easy"). Each value is
+    /// clamped to `rpeTargetRange`.
     public static func rpeTargets(_ s: String) -> [Double] {
         var out: [Double] = []
         var token = ""
-        func flush() { if let v = Double(token) { out.append(v) }; token = "" }
+        func flush() {
+            if let v = Double(token) { out.append(min(max(v, rpeTargetRange.lowerBound), rpeTargetRange.upperBound)) }
+            token = ""
+        }
         for ch in s {
             if ch.isNumber || ch == "." { token.append(ch) } else { flush() }
         }
@@ -190,20 +248,32 @@ public enum CoachEngine {
 
     /// Cue for the NEXT set from the set you just logged. `gap` = target − logged;
     /// positive means it came in easier than planned (room to add load). Bigger jumps
-    /// are reserved for compounds.
+    /// are reserved for compounds. `increment` is one load step for this lift (5 lb by
+    /// default, 2.5 for small lifts); a bodyweight set cues reps instead of load.
     public static func nextSetCue(loggedRPE: Double, targetRPE: Double?, isCompound: Bool,
-                                  holdProgression: Bool = false) -> NextSetCue {
-        let target = targetRPE ?? 8
+                                  holdProgression: Bool = false, increment: Double = 5,
+                                  isBodyweight: Bool = false) -> NextSetCue {
+        let target = min(max(targetRPE ?? 8, rpeTargetRange.lowerBound), rpeTargetRange.upperBound)
         let gap = target - loggedRPE
         let cue: NextSetCue
-        if gap >= 2.5 && isCompound {
-            cue = NextSetCue(label: "Easy — add 10 lb", weightDeltaLb: 10, direction: .up)
+        if isBodyweight {
+            if gap >= 1.0 {
+                cue = NextSetCue(label: "Easy — add a rep", weightDeltaLb: 0, direction: .up)
+            } else if gap >= -0.5 {
+                cue = NextSetCue(label: "On target — hold", weightDeltaLb: 0, direction: .hold)
+            } else if loggedRPE >= 9.5 {
+                cue = NextSetCue(label: "Heavy — drop a rep", weightDeltaLb: 0, direction: .down)
+            } else {
+                cue = NextSetCue(label: "Tough — hold", weightDeltaLb: 0, direction: .hold)
+            }
+        } else if gap >= 2.5 && isCompound {
+            cue = NextSetCue(label: "Easy — add \(fmt(increment * 2)) lb", weightDeltaLb: increment * 2, direction: .up)
         } else if gap >= 1.0 {
-            cue = NextSetCue(label: "Add 5 lb", weightDeltaLb: 5, direction: .up)
+            cue = NextSetCue(label: "Add \(fmt(increment)) lb", weightDeltaLb: increment, direction: .up)
         } else if gap >= -0.5 {
             cue = NextSetCue(label: "On target — hold", weightDeltaLb: 0, direction: .hold)
         } else if loggedRPE >= 9.5 {
-            cue = NextSetCue(label: "Heavy — drop 5 lb", weightDeltaLb: -5, direction: .down)
+            cue = NextSetCue(label: "Heavy — drop \(fmt(increment)) lb", weightDeltaLb: -increment, direction: .down)
         } else {
             cue = NextSetCue(label: "Tough — hold", weightDeltaLb: 0, direction: .hold)
         }
@@ -223,6 +293,16 @@ public enum CoachEngine {
             if ch.isNumber { digits.append(ch) } else if !digits.isEmpty { break }
         }
         return Int(digits) ?? 0
+    }
+
+    /// Parses the top of a rep range: "5-7"→7, "8–12"→12, "15"→15, "10/leg"→10.
+    /// Nil when there's no number to read.
+    public static func highRep(of repRange: String) -> Int? {
+        if let m = repRange.firstMatch(of: /(\d+)\s*(?:-|–|—|to)\s*(\d+)/),
+           let a = Int(m.1), let b = Int(m.2) {
+            return max(a, b)
+        }
+        return repRange.firstMatch(of: /\d+/).flatMap { Int($0.0) }
     }
 
     public static func roundToStep(_ value: Double, step: Double) -> Double {

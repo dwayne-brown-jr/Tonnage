@@ -20,7 +20,9 @@ public enum PlateMath {
         public let achievable: Double
         /// Weight per side that couldn't be matched (0 if exact).
         public let remainderPerSide: Double
-        public var isExact: Bool { remainderPerSide < 0.001 }
+        /// The target is lighter than the empty bar, so it can't be loaded at all.
+        public let isBelowBar: Bool
+        public var isExact: Bool { !isBelowBar && remainderPerSide < 0.001 }
     }
 
     /// Greedy load of `target` onto a `bar` using `available` plates.
@@ -39,6 +41,7 @@ public enum PlateMath {
         let loadedPerSide = perSideTarget - remaining
         return Loadout(perSide: pairs,
                        achievable: bar + 2 * loadedPerSide,
-                       remainderPerSide: max(0, remaining))
+                       remainderPerSide: max(0, remaining),
+                       isBelowBar: target < bar - 0.001)
     }
 }

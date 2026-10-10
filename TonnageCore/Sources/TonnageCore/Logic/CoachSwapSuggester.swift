@@ -7,20 +7,21 @@ import Foundation
 public enum CoachSwapSuggester {
 
     public static func systemPrompt(for profile: CoachProfile) -> String {
-        let limits = profile.limitations.trimmingCharacters(in: .whitespacesAndNewlines)
+        let limits = PromptSafety.quoted(profile.limitations)
         let limitsLine = limits.isEmpty ? "" : " Work around these limitations they flagged: \(limits)."
         return """
         You suggest alternative exercises for a lifter mid-program. Given a movement they want to swap out, propose 5 alternatives that train the SAME primary muscles so their program stays balanced.\(limitsLine) They're training for \(profile.goal.coachPhrase).
         Use real, well-known exercise names — no inventions. Favor practical gym options with some variety in equipment/setup. Never repeat the original movement.
         OUTPUT: only a JSON array of exercise-name strings wrapped in <swaps> tags. No prose, no markdown.
         <swaps>["Front Squat","Leg Press","Hack Squat","Bulgarian Split Squat","Walking Lunge"]</swaps>
+        \(PromptSafety.clause)
         """
     }
 
     public static func userPrompt(exerciseName: String, isCardio: Bool, avoid: [String] = []) -> String {
         let kind = isCardio ? "conditioning option" : "movement"
-        var s = "Suggest 5 alternatives to \"\(exerciseName)\" — the same \(kind), training the same primary muscles. Favor variety in equipment and setup (mix barbell, dumbbell, cable, machine, bodyweight)."
-        let list = avoid.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        var s = "Suggest 5 alternatives to \(PromptSafety.quoted(exerciseName, limit: PromptSafety.maxNameLength)) — the same \(kind), training the same primary muscles. Favor variety in equipment and setup (mix barbell, dumbbell, cable, machine, bodyweight)."
+        let list = avoid.map(PromptSafety.name).filter { !$0.isEmpty }.prefix(40)
         if !list.isEmpty {
             s += " Do NOT suggest any of these (already in the program or already shown): \(list.joined(separator: ", "))."
         }

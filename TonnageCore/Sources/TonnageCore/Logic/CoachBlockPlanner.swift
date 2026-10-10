@@ -11,18 +11,18 @@ public enum CoachBlockPlanner {
     /// Coach speaks in their context, but flips into structured-output mode.
     public static func systemPrompt(for profile: CoachProfile,
                                     sessions: [SessionSpec] = SplitPreset.upperLower.sessionSpecs) -> String {
-        let name = profile.name.trimmingCharacters(in: .whitespaces)
-        let who = name.isEmpty ? "your athlete" : name
+        let name = PromptSafety.quoted(profile.name, limit: PromptSafety.maxNameLength)
+        let who = name.isEmpty ? "your athlete" : "the athlete \(name)"
         let stats = profile.statsClause
         let statsPart = stats.isEmpty ? "" : " (\(stats))"
 
         let count = sessions.count
-        let sessionList = sessions.map { "\($0.name) (\($0.focus))" }.joined(separator: ", ")
-        let firstName = sessions.first?.name ?? "Upper A"
-        let firstFocus = sessions.first?.focus ?? "Push focus"
+        let sessionList = sessions.map { "\(PromptSafety.name($0.name)) (\(PromptSafety.name($0.focus)))" }.joined(separator: ", ")
+        let firstName = sessions.first.map { PromptSafety.name($0.name) } ?? "Upper A"
+        let firstFocus = sessions.first.map { PromptSafety.name($0.focus) } ?? "Push focus"
 
         return """
-        You are \(who)'s strength coach. \(profile.experience.coachPhrase)\(statsPart), \(count)-day split, training for \(profile.goal.coachPhrase).
+        You are strength coach to \(who). \(profile.experience.coachPhrase)\(statsPart), \(count)-day split, training for \(profile.goal.coachPhrase).
         \(profile.coachingClause) Weight the accessory selection toward the muscles they want to bring up, and keep every movement doable with their equipment.
         TASK: Plan the next 5-week block. Keep main barbell lifts constant across blocks so progress is measurable. Rotate accessory lifts based on what stalled or what's underdeveloped. Address weak points the prior block surfaced. Match the volume profile (sets × rep range) to the goal — leaner ranges for strength, higher reps for size.
         PHASE STRUCTURE inside every block: Week 1 RAMP (3–4 reps left), W2–3 BUILD (2 reps left), W4 PEAK (0–1 reps left), W5 DELOAD. You don't author per-week prescriptions — the engine derives those from the block-level rep range and rpe target.
@@ -66,6 +66,7 @@ public enum CoachBlockPlanner {
           ]
         }
         </block_plan>
+        \(PromptSafety.clause)
         """
     }
 
@@ -102,10 +103,10 @@ public enum CoachBlockPlanner {
         if let program, !program.orderedSessions.isEmpty {
             lines.append("\n## Current program (the one to rewrite)")
             for s in program.orderedSessions {
-                lines.append("### \(s.name) — \(s.subtitle)")
+                lines.append("### \(PromptSafety.name(s.name)) — \(PromptSafety.name(s.subtitle))")
                 for ex in s.orderedExercises {
                     let cardio = ex.isCardio ? " [cardio]" : (ex.isCompound ? " [compound]" : "")
-                    lines.append("- \(ex.name): \(ex.prescribedSets)×\(ex.repRange), rpe \(ex.rpeTarget)\(cardio)")
+                    lines.append("- \(PromptSafety.name(ex.name)): \(ex.prescribedSets)×\(PromptSafety.name(ex.repRange)), rpe \(PromptSafety.name(ex.rpeTarget))\(cardio)")
                 }
             }
         }
@@ -114,7 +115,7 @@ public enum CoachBlockPlanner {
             lines.append("\n## Recent PRs (lifetime, most recent first)")
             for pr in prs.prefix(12) {
                 let date = pr.date.formatted(.dateTime.month(.abbreviated).day())
-                lines.append("- \(pr.exerciseName): \(fmt(pr.weight))×\(pr.reps), e1RM \(fmt(pr.estimatedOneRM.rounded())) on \(date) (W\(pr.weekNumber) B\(pr.blockNumber))")
+                lines.append("- \(PromptSafety.name(pr.exerciseName)): \(fmt(pr.weight))×\(pr.reps), e1RM \(fmt(pr.estimatedOneRM.rounded())) on \(date) (W\(pr.weekNumber) B\(pr.blockNumber))")
             }
         }
 

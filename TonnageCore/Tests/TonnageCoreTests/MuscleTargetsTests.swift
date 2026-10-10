@@ -49,22 +49,25 @@ struct MuscleTargetsTests {
         #expect(drawn == Set(Muscle.allCases))
     }
 
-    @Test("Muscle load credits primary 1, secondary ½, and skips cardio + unknowns")
-    func muscleLoad() {
-        let bench = LoggedExercise(name: "Barbell Bench Press", isCompound: true, sortOrder: 0)
-        bench.sets = (0..<3).map { LoggedSet(weight: 185, reps: 5, completed: true, sortOrder: $0) }
-        let mystery = LoggedExercise(name: "Mystery Move", sortOrder: 1)
-        mystery.sets = [LoggedSet(weight: 50, reps: 10, completed: true, sortOrder: 0)]
-        let bike = LoggedExercise(name: "Bike intervals", isCardio: true, sortOrder: 2)
-        bike.sets = [LoggedSet(weight: 0, reps: 0, completed: true, sortOrder: 0)]
-        let w = LoggedWorkout(weekNumber: 1, dayType: .lift, sessionName: "Upper")
-        w.exercises = [bench, mystery, bike]
+    @Test("Heat mirrors the per-group bar counts, scaled to the busiest group")
+    func muscleHeat() {
+        let volumes = [
+            Analytics.MuscleVolume(group: .back, sets: 12),
+            Analytics.MuscleVolume(group: .glutes, sets: 3),
+            Analytics.MuscleVolume(group: nil, sets: 5)          // "Other" — no body region
+        ]
+        let heat = Analytics.muscleHeat(volumes)
+        #expect(heat[.lats] == 1)
+        #expect(heat[.upperBack] == 1)                          // every back muscle shares the bar
+        #expect(heat[.lowerBack] == 1)
+        #expect(heat[.glutes] == 0.25)
+        #expect(heat[.chest] == nil)
+        #expect(heat.values.allSatisfy { $0 <= 1 })
+    }
 
-        let load = Analytics.muscleLoad([w])
-        #expect(load[.chest] == 3)
-        #expect(load[.frontDelts] == 1.5)
-        #expect(load[.triceps] == 1.5)
-        #expect(load[.quads] == nil)       // bike is cardio
-        #expect(load.count == 3)
+    @Test("A light week is scaled against the minimum effective volume, not maxed out")
+    func lightWeekNotMaxed() {
+        let heat = Analytics.muscleHeat([Analytics.MuscleVolume(group: .chest, sets: 2)])
+        #expect(heat[.chest] == 2.0 / Double(Analytics.weeklySetsMEV))
     }
 }

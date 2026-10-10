@@ -171,19 +171,18 @@ public extension ExerciseLibrary {
 
 public extension Analytics {
 
-    /// Weighted hard sets per fine-grained muscle — a set counts 1 for each primary mover and
-    /// ½ for each secondary — for the body heat map. Same filters as `setsPerMuscle`
-    /// (lift days, completed working sets, no cardio); unknown names contribute nothing.
-    static func muscleLoad(_ workouts: [LoggedWorkout]) -> [Muscle: Double] {
-        var load: [Muscle: Double] = [:]
-        for w in workouts where w.dayType == .lift {
-            for ex in (w.exercises ?? []) where !ex.isCardio {
-                let done = Double(ex.completedSetCount)
-                guard done > 0, let t = ExerciseLibrary.muscleTargets(for: ex.name) else { continue }
-                for m in t.primary { load[m, default: 0] += done }
-                for m in t.secondary { load[m, default: 0] += done * 0.5 }
-            }
+    /// Body heat map intensities (0…1) that mirror the Sets per Muscle bars: every muscle
+    /// takes its group's hard-set count, relative to the busiest group so the emphasis
+    /// stands out. The scale never drops below the minimum effective volume, so a light
+    /// week doesn't read as maxed out. "Other" (unrecognized movements) has no body region.
+    static func muscleHeat(_ volumes: [MuscleVolume]) -> [Muscle: Double] {
+        var sets: [MuscleGroup: Int] = [:]
+        for v in volumes { if let g = v.group { sets[g, default: 0] += v.sets } }
+        let top = Double(max(sets.values.max() ?? 0, weeklySetsMEV))
+        var heat: [Muscle: Double] = [:]
+        for m in Muscle.allCases {
+            if let n = sets[m.group], n > 0 { heat[m] = Double(n) / top }
         }
-        return load
+        return heat
     }
 }

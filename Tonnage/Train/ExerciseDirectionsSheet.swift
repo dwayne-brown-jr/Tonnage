@@ -80,7 +80,7 @@ struct ExerciseDirectionsSheet: View {
                 VStack(alignment: .leading, spacing: DS.Spacing.sm) {
                     legendRow("Primary", muscles: t.primary, swatch: Color.accent)
                     if !t.secondary.isEmpty {
-                        legendRow("Secondary", muscles: t.secondary, swatch: Color.accent.opacity(0.57))
+                        legendRow("Secondary", muscles: t.secondary, swatch: Color.accent.opacity(0.48))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

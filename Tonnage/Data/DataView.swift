@@ -454,10 +454,12 @@ struct DataView: View {
     }
 
     /// Body heat map for the same week: brightness = weighted sets (primary 1, secondary ½),
-    /// saturating at the top of the productive range.
+    /// relative to the week's most-worked muscle so the emphasis stands out. The scale never
+    /// drops below the minimum effective volume, so a light week doesn't read as maxed out.
     private var muscleHeatMap: some View {
         let load = muscleWeek.map { wk in Analytics.muscleLoad(scoped.filter { $0.weekNumber == wk }) } ?? [:]
-        let heat = load.mapValues { $0 / Double(Analytics.weeklySetsMAV) }
+        let top = max(load.values.max() ?? 0, Double(Analytics.weeklySetsMEV))
+        let heat = load.mapValues { $0 / top }
         return VStack(spacing: DS.Spacing.xs) {
             MuscleMapView(.heat(heat))
                 .frame(height: 210)

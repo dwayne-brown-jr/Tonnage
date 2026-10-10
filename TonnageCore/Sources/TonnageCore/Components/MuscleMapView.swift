@@ -99,13 +99,13 @@ public struct MuscleMapView: View {
 
     // MARK: Color
 
-    /// 0 = untouched, 0.45 = secondary, 1 = primary; heat mode passes its value through.
+    /// 0 = untouched, 0.6 = secondary, 1 = primary; heat mode passes its value through.
     private func intensity(of muscle: Muscle) -> Double {
         switch mode {
         case .targets(let t):
             switch t.emphasis(of: muscle) {
             case .primary:   1
-            case .secondary: 0.45
+            case .secondary: 0.6
             case .none:      0
             }
         case .heat(let values):
@@ -117,7 +117,8 @@ public struct MuscleMapView: View {
         guard let muscle else { return Color.white.opacity(0.05) }      // head, hands, joints
         let v = revealed ? intensity(of: muscle) : 0
         guard v > 0 else { return Color.white.opacity(0.10) }           // untouched muscle
-        return highlight.opacity(0.22 + 0.78 * v)
+        // Ease-in so low values stay dim and the top of the range separates clearly.
+        return highlight.opacity(0.18 + 0.82 * v * v)
     }
 
     private var accessibilityValue: String {

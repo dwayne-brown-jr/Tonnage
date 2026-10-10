@@ -152,6 +152,7 @@ struct SplitPickerSheet: View {
         hasChosenSplit = true
         if changed, let program {
             applySplit(selected, to: program, in: context)
+            PhoneConnectivity.shared.pushContext()   // the watch runs the new sessions
         }
         Haptics.success()
         onApply()

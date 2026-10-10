@@ -462,6 +462,7 @@ struct PlanBlockSheet: View {
         do {
             try context.save()
             Haptics.success()
+            PhoneConnectivity.shared.pushContext()   // the watch runs the new sessions
             onCommit()
             dismiss()
         } catch {

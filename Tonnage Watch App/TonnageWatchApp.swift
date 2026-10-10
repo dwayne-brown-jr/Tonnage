@@ -8,7 +8,7 @@ struct TonnageWatchApp: App {
 
     init() {
         container = TonnageStore.makeContainer()
-        WatchConnectivityClient.shared.activate()   // sync finished workouts to the phone
+        WatchConnectivityClient.shared.activate(container: container)   // sync with the phone
     }
 
     var body: some Scene {

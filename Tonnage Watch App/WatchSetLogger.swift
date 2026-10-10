@@ -3,7 +3,7 @@ import WatchKit
 import TonnageCore
 
 /// Crown-driven set logging: spin the Digital Crown for weight, tap for reps,
-/// log the set (starts the rest timer), and advance.
+/// log the set (starts the rest timer), say how many reps were left, and advance.
 struct WatchSetLogger: View {
     let model: WatchSessionModel
     let exerciseIndex: Int
@@ -13,6 +13,8 @@ struct WatchSetLogger: View {
     @State private var setIndex = 0
     @State private var weight = 0.0
     @State private var reps = 0
+    /// The set just logged, waiting on its reps-left answer.
+    @State private var askingRepsLeftFor: Int?
     @FocusState private var crownFocused: Bool
 
     private var exercise: WatchSessionModel.Exercise { model.exercises[exerciseIndex] }
@@ -66,6 +68,10 @@ struct WatchSetLogger: View {
         }
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: Binding(get: { askingRepsLeftFor != nil },
+                                    set: { if !$0 { finishRepsLeft(nil) } })) {
+            RepsLeftPicker(target: targetRepsLeft) { finishRepsLeft($0) }
+        }
         .onAppear {
             // Resume at the next set that hasn't been logged (on the phone OR the watch).
             // Without this we'd default to set 1 and a "Log Set" tap would silently
@@ -114,12 +120,18 @@ struct WatchSetLogger: View {
         reps = exercise.sets[setIndex].reps
     }
 
+    /// Reps-left target for the current set, from the prescription ("7→8→8" → 3, 2, 2).
+    private var targetRepsLeft: Int? {
+        CoachEngine.targetRPE(forSetIndex: setIndex, in: exercise.rpeTarget).map { Int((10 - $0).rounded()) }
+    }
+
     private func logSet() {
         guard model.exercises.indices.contains(exerciseIndex),
               model.exercises[exerciseIndex].sets.indices.contains(setIndex) else { return }
         model.exercises[exerciseIndex].sets[setIndex].weight = weight
         model.exercises[exerciseIndex].sets[setIndex].reps = reps
         model.exercises[exerciseIndex].sets[setIndex].completed = true
+        model.exercises[exerciseIndex].sets[setIndex].editedOnWatch = true
 
         if !exercise.isCardio {
             let compound = UserDefaults.standard.object(forKey: "rest.compound") as? Int ?? 180
@@ -129,6 +141,27 @@ struct WatchSetLogger: View {
         WKInterfaceDevice.current().play(.success)
         WatchConnectivityClient.shared.syncLive(model.payload())   // auto-sync to phone
 
+        // Strength sets ask for effort, which next week's Coach's Call needs.
+        let set = model.exercises[exerciseIndex].sets[setIndex]
+        if !exercise.isCardio && !set.isWarmup {
+            askingRepsLeftFor = setIndex
+        } else {
+            advance()
+        }
+    }
+
+    /// Records the answer (nil = skipped), re-syncs, then moves on.
+    private func finishRepsLeft(_ repsLeft: Int?) {
+        guard let index = askingRepsLeftFor else { return }
+        askingRepsLeftFor = nil
+        if let repsLeft, model.exercises[exerciseIndex].sets.indices.contains(index) {
+            model.exercises[exerciseIndex].sets[index].rpe = Double(10 - repsLeft)
+            WatchConnectivityClient.shared.syncLive(model.payload())
+        }
+        advance()
+    }
+
+    private func advance() {
         if isLastSet {
             dismiss()
         } else {
@@ -136,4 +169,54 @@ struct WatchSetLogger: View {
             load()
         }
     }
+}
+
+/// "How many reps were left?" — one tap after each working set. Five big targets
+/// (0 … 4+), the prescribed target ringed in accent, and Skip for when it doesn't matter.
+/// Answers map to RPE 10 … 6, the scale Coach's Call reads.
+struct RepsLeftPicker: View {
+    let target: Int?
+    let onPick: (Int?) -> Void
+
+    private let options = [0, 1, 2, 3, 4]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: DS.Spacing.sm) {
+                VStack(spacing: 2) {
+                    Text("REPS LEFT?")
+                        .font(.system(.headline, weight: .heavy).width(.condensed))
+                    if let target {
+                        Text("Target \(target == 4 ? "4+" : "\(target)")")
+                            .font(.system(.caption2, weight: .semibold))
+                            .foregroundStyle(Color.accent)
+                    }
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                    ForEach(options, id: \.self) { n in
+                        Button {
+                            WKInterfaceDevice.current().play(.click)
+                            onPick(n)
+                        } label: {
+                            Text(n == 4 ? "4+" : "\(n)")
+                                .font(.system(.title3, design: .rounded, weight: .bold).monospacedDigit())
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(n == target ? Color.accent : .gray)
+                        .accessibilityLabel(n == 4 ? "4 or more reps left" : "\(n) reps left")
+                    }
+                }
+                Button("Skip") { onPick(nil) }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+}
+
+#Preview("Reps left") {
+    RepsLeftPicker(target: 2) { _ in }
 }

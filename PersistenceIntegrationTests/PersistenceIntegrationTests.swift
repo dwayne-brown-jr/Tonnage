@@ -105,12 +105,13 @@ final class PersistenceIntegrationTests: XCTestCase {
         XCTAssertEqual(arrived.exercises?.first?.topSet?.weight, 230)
     }
 
-    func testWatchPayloadUpsertReplaces() throws {
+    func testWatchPayloadMergesIntoSameSlot() throws {
         let ctx = makeCtx()
         applyWorkoutPayload(WorkoutPayload(from: liftWorkout(sets: [(100, 5)])), to: ctx)
         applyWorkoutPayload(WorkoutPayload(from: liftWorkout(sets: [(115, 5)])), to: ctx) // same slot
         let all = try ctx.fetch(FetchDescriptor<LoggedWorkout>())
-        XCTAssertEqual(all.count, 1)                                  // replaced, not duplicated
+        XCTAssertEqual(all.count, 1)                                  // merged, not duplicated
+        XCTAssertEqual(all.first?.exercises?.first?.sets?.count, 2)   // and no set lost
         XCTAssertEqual(all.first?.exercises?.first?.topSet?.weight, 115)
     }
 }

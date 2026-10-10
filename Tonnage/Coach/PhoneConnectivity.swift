@@ -17,15 +17,16 @@ final class PhoneConnectivity: NSObject, @unchecked Sendable {
         WCSession.default.activate()
     }
 
-    /// Push the rest-timer defaults + active block + the current block's logged
-    /// workouts to the watch (latest-state channel), so the watch can mirror what was
-    /// logged on the phone.
+    /// Push the rest-timer defaults, active block and week, the program's sessions and the
+    /// current block's logged workouts to the watch (latest-state channel), so the watch
+    /// runs the phone's real program and mirrors what was logged on the phone.
     @MainActor
     func pushContext() {
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
         guard session.activationState == .activated else { return }
         var dict = Self.contextDict()
+        if let program = programData() { dict["program"] = program }
         if let workouts = currentBlockWorkoutsData() { dict["workouts"] = workouts }
         try? session.updateApplicationContext(dict)
     }
@@ -35,8 +36,18 @@ final class PhoneConnectivity: NSObject, @unchecked Sendable {
         return [
             "rest.compound": d.object(forKey: "rest.compound") as? Int ?? 180,
             "rest.isolation": d.object(forKey: "rest.isolation") as? Int ?? 75,
-            "currentBlock": d.object(forKey: "currentBlock") as? Int ?? 1
+            "currentBlock": d.object(forKey: "currentBlock") as? Int ?? 1,
+            "currentWeek": d.object(forKey: "train.week") as? Int ?? 1
         ]
+    }
+
+    /// The program's session templates, encoded as a `ProgramPayload`.
+    @MainActor
+    private func programData() -> Data? {
+        guard let context = container?.mainContext,
+              let program = try? context.fetch(FetchDescriptor<Program>(sortBy: [SortDescriptor(\.createdAt)])).first
+        else { return nil }
+        return try? ProgramPayload(from: program).encoded()
     }
 
     /// Encodes the current block's lift workouts as `[WorkoutPayload]` for the watch.
@@ -47,6 +58,8 @@ final class PhoneConnectivity: NSObject, @unchecked Sendable {
         let descriptor = FetchDescriptor<LoggedWorkout>(predicate: #Predicate { $0.blockNumber == block })
         guard let workouts = try? context.fetch(descriptor) else { return nil }
         let payloads = workouts.filter { $0.dayType == .lift }.map { WorkoutPayload(from: $0) }
+        // Exporting gives new sets their sync IDs — keep them, so the watch's copy matches.
+        if context.hasChanges { context.saveOrReport() }
         return try? JSONEncoder().encode(payloads)
     }
 

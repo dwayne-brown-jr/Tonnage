@@ -45,7 +45,11 @@ struct WatchSessionView: View {
             }
             Section {
                 Button(role: .destructive, action: finish) {
-                    Label("Finish Session", systemImage: "checkmark.circle.fill")
+                    if model.hasCompletedSets {
+                        Label("Finish Session", systemImage: "checkmark.circle.fill")
+                    } else {
+                        Label("End — Nothing Logged", systemImage: "xmark.circle")
+                    }
                 }
             }
         }
@@ -114,6 +118,13 @@ struct WatchSessionView: View {
 
     private func finish() {
         workout.end(meta: model.liftMeta)
+        // Nothing logged → nothing to send. An empty payload would only ever risk the
+        // phone's copy of this session.
+        guard model.hasCompletedSets else {
+            WKInterfaceDevice.current().play(.click)
+            dismiss()
+            return
+        }
         FuelBridge.markSessionCompleted(sessionName: model.sessionName)
         WatchConnectivityClient.shared.send(model.payload())
         WKInterfaceDevice.current().play(.success)

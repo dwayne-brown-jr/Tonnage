@@ -113,7 +113,10 @@ struct TrainView: View {
             store.applySuggestedWeights()
         }
         .onChange(of: currentBlock) { PhoneConnectivity.shared.pushContext() }   // sync active block to watch
-        .onChange(of: week) { reload() }
+        .onChange(of: week) {
+            reload()
+            PhoneConnectivity.shared.pushContext()   // the watch's week picker follows the phone
+        }
         .onChange(of: sessionIndex) { reload() }
         .onChange(of: dayType) { old, new in
             if old == .lift && new != .lift { restDate = .now }   // each rest-logging session starts at today

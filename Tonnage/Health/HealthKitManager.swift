@@ -641,9 +641,16 @@ final class HealthKitManager {
                 try await builder.addMetadata(metadata)
             }
             if let energyKcal, energyKcal > 0 {
-                let energy = HKQuantity(unit: .kilocalorie(), doubleValue: energyKcal)
-                let sample = HKQuantitySample(type: activeEnergy, quantity: energy, start: start, end: end)
-                try await builder.addSamples([sample])
+                // One sample per calendar day, split by time, so a session that crosses
+                // midnight never writes an energy sample spanning two days.
+                let total = end.timeIntervalSince(start)
+                let samples = Self.dayPieces(start: start, end: end).map { piece in
+                    HKQuantitySample(type: activeEnergy,
+                                     quantity: HKQuantity(unit: .kilocalorie(),
+                                                          doubleValue: energyKcal * piece.duration / total),
+                                     start: piece.start, end: piece.end)
+                }
+                try await builder.addSamples(samples)
             }
             try await builder.endCollection(at: end)
             _ = try await builder.finishWorkout()
@@ -651,6 +658,21 @@ final class HealthKitManager {
         } catch {
             return false   // SwiftData still has it; Health just didn't get it.
         }
+    }
+
+    /// `start…end` cut at each local midnight.
+    static func dayPieces(start: Date, end: Date) -> [DateInterval] {
+        let calendar = Calendar.current
+        var pieces: [DateInterval] = []
+        var cursor = start
+        while cursor < end {
+            let nextMidnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: cursor))
+                ?? end
+            let next = min(end, nextMidnight)
+            pieces.append(DateInterval(start: cursor, end: next))
+            cursor = next
+        }
+        return pieces
     }
 
     /// Convenience for a finished lifting session. Skips the write if the Watch already

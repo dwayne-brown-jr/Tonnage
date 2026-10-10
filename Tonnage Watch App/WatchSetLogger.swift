@@ -140,6 +140,7 @@ struct WatchSetLogger: View {
         }
         WKInterfaceDevice.current().play(.success)
         WatchConnectivityClient.shared.syncLive(model.payload())   // auto-sync to phone
+        WatchWidgetSync.refresh(inProgress: model.payload())       // complication totals now
 
         // Strength sets ask for effort, which next week's Coach's Call needs.
         let set = model.exercises[exerciseIndex].sets[setIndex]

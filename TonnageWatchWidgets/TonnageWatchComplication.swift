@@ -29,7 +29,11 @@ struct WatchComplicationProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WatchComplicationEntry>) -> Void) {
         let entry = WatchComplicationEntry(date: .now, snapshot: WidgetSnapshot.read() ?? .placeholder)
-        completion(Timeline(entries: [entry], policy: .never))
+        // The app reloads on every save; also reload after midnight so a new day or week
+        // never sits on yesterday's numbers if the app isn't opened.
+        let midnight = Calendar.current.date(byAdding: .day, value: 1,
+                                             to: Calendar.current.startOfDay(for: .now)) ?? .now.addingTimeInterval(86_400)
+        completion(Timeline(entries: [entry], policy: .after(midnight)))
     }
 }
 

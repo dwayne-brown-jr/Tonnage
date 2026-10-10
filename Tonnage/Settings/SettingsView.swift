@@ -32,6 +32,11 @@ struct SettingsView: View {
     @State private var showImporter = false
     @State private var showResetConfirm = false
     @State private var importMessage: String?
+    /// A backup that's been read and is waiting on the user's go-ahead.
+    @State private var pendingRestore: BackupData?
+    @Query(sort: \Program.createdAt) private var programs: [Program]
+    @AppStorage("currentBlock") private var currentBlock = 1
+    @AppStorage("train.week") private var currentWeek = 1
     @State private var showHowItWorks = false
     @State private var showProfileEditor = false
 
@@ -111,6 +116,16 @@ struct SettingsView: View {
         .sheet(isPresented: $showSplitPicker) {
             SplitPickerSheet()
         }
+        .confirmationDialog("Restore this backup?",
+                            isPresented: Binding(get: { pendingRestore != nil },
+                                                 set: { if !$0 { pendingRestore = nil } }),
+                            titleVisibility: .visible,
+                            presenting: pendingRestore) { backup in
+            Button("Restore") { restore(backup) }
+            Button("Cancel", role: .cancel) { pendingRestore = nil }
+        } message: { backup in
+            Text(restoreMessage(backup))
+        }
         .confirmationDialog("Reset all logged data?", isPresented: $showResetConfirm, titleVisibility: .visible) {
             Button("Reset Everything", role: .destructive) {
                 resetLoggedData(in: modelContext)
@@ -162,7 +177,8 @@ struct SettingsView: View {
 
             HStack(spacing: DS.Spacing.sm) {
                 dataButton("Export", systemImage: "square.and.arrow.up") {
-                    let backup = makeBackup(workouts: workouts, activities: activities)
+                    let backup = makeBackup(workouts: workouts, activities: activities, program: programs.first,
+                                            currentBlock: currentBlock, currentWeek: currentWeek)
                     if let data = try? backup.encoded() {
                         exportDoc = JSONBackupDocument(data: data)
                         showExporter = true
@@ -212,8 +228,30 @@ struct SettingsView: View {
             importMessage = "Couldn't read that backup file."
             return
         }
-        applyBackup(backup, to: modelContext)
-        importMessage = "Imported \(backup.workouts.count) workouts · \(backup.activities.count) activities."
+        pendingRestore = backup   // confirm first — see restoreMessage
+    }
+
+    /// What restoring will do, in plain terms, before anything changes.
+    private func restoreMessage(_ backup: BackupData) -> String {
+        var lines = ["\(backup.contentsSummary.prefix(1).uppercased() + backup.contentsSummary.dropFirst()), exported \(backup.exportedAt.formatted(date: .abbreviated, time: .shortened))."]
+        lines.append("It's merged into your log: nothing you've logged since is deleted or overwritten.")
+        if backup.program != nil { lines.append("Your program's sessions will be replaced with the backup's.") }
+        if let block = backup.currentBlock {
+            lines.append("You'll move to Block \(block)\(backup.currentWeek.map { ", Week \($0)" } ?? "").")
+        }
+        return lines.joined(separator: " ")
+    }
+
+    private func restore(_ backup: BackupData) {
+        pendingRestore = nil
+        let result = applyBackup(backup, to: modelContext)
+        if let block = backup.currentBlock { currentBlock = block }
+        if let week = backup.currentWeek, (1...5).contains(week) { currentWeek = week }
+        PhoneConnectivity.shared.pushContext()
+        var parts = ["Restored \(result.workoutsChanged) workout\(result.workoutsChanged == 1 ? "" : "s")",
+                     "\(result.activitiesAdded) activit\(result.activitiesAdded == 1 ? "y" : "ies")"]
+        if result.programRestored { parts.append("the program") }
+        importMessage = parts.joined(separator: " · ") + "."
         Haptics.success()
     }
 

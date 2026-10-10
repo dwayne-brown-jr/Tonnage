@@ -18,6 +18,17 @@ enum WidgetSync {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    /// Rebuild from the store alone — for saves that happen away from TRAIN (a watch sync,
+    /// a CloudKit import, a restore, a delete). Keeps the session TRAIN last published.
+    static func refreshFromStore(context: ModelContext) {
+        let d = UserDefaults.standard
+        let block = d.object(forKey: "currentBlock") as? Int ?? 1
+        let week = d.object(forKey: "train.week") as? Int ?? 1
+        let last = WidgetSnapshot.read()
+        refresh(context: context, block: block, week: week,
+                sessionName: last?.sessionName ?? "", sessionFocus: last?.sessionFocus ?? "")
+    }
+
     /// Sums completed work across every logged session in the given block + week.
     private static func weekTotals(context: ModelContext, block: Int, week: Int)
         -> (sets: Int, reps: Int, volume: Double) {

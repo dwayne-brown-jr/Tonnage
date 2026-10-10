@@ -21,22 +21,37 @@ public struct ActivityPayload: Codable, Sendable, Equatable {
     }
 }
 
-/// Full export of the user's logged data (program seed is recreated on launch, so
-/// it isn't included).
+/// Full export of the user's logged data, plus the program and where they are in it.
 public struct BackupData: Codable, Sendable, Equatable {
     /// Bump when the backup schema changes shape. Imports from a NEWER version are
     /// rejected (decoded → nil) rather than half-read into the store.
-    public static let currentVersion = 1
+    /// v2 adds the program and the current block/week (all optional, so v1 still reads).
+    public static let currentVersion = 2
 
     public var version: Int
     public var exportedAt: Date
     public var workouts: [WorkoutPayload]
     public var activities: [ActivityPayload]
+    /// The program's session templates (the block plan being run).
+    public var program: ProgramPayload?
+    public var currentBlock: Int?
+    public var currentWeek: Int?
 
     public init(version: Int = BackupData.currentVersion, exportedAt: Date = .now,
-                workouts: [WorkoutPayload], activities: [ActivityPayload]) {
+                workouts: [WorkoutPayload], activities: [ActivityPayload],
+                program: ProgramPayload? = nil, currentBlock: Int? = nil, currentWeek: Int? = nil) {
         self.version = version; self.exportedAt = exportedAt
         self.workouts = workouts; self.activities = activities
+        self.program = program; self.currentBlock = currentBlock; self.currentWeek = currentWeek
+    }
+
+    /// One line for the restore confirmation: what's in the file.
+    public var contentsSummary: String {
+        var parts = ["\(workouts.count) workout\(workouts.count == 1 ? "" : "s")",
+                     "\(activities.count) activit\(activities.count == 1 ? "y" : "ies")"]
+        if let program { parts.append("the \(program.name.isEmpty ? "program" : "\"\(program.name)\"") program") }
+        if let currentBlock { parts.append("Block \(currentBlock)\(currentWeek.map { ", Week \($0)" } ?? "")") }
+        return parts.joined(separator: ", ")
     }
 
     private static func coder() -> (JSONEncoder, JSONDecoder) {
@@ -57,7 +72,8 @@ public struct BackupData: Codable, Sendable, Equatable {
 }
 
 @MainActor
-public func makeBackup(workouts: [LoggedWorkout], activities: [Activity]) -> BackupData {
+public func makeBackup(workouts: [LoggedWorkout], activities: [Activity], program: Program? = nil,
+                       currentBlock: Int? = nil, currentWeek: Int? = nil) -> BackupData {
     BackupData(
         // Full-fidelity snapshot (warm-up flags, cardio metrics, notes) — the same
         // mapping the watch sync uses, so backup and sync can never drift apart.
@@ -66,15 +82,30 @@ public func makeBackup(workouts: [LoggedWorkout], activities: [Activity]) -> Bac
             ActivityPayload(name: $0.name, kind: $0.kind, durationMinutes: $0.durationMinutes,
                             distanceMiles: $0.distanceMiles, flights: $0.flights, activeCalories: $0.activeCalories,
                             detail: $0.detail, date: $0.date)
-        }
+        },
+        program: program.map { ProgramPayload(from: $0) },
+        currentBlock: currentBlock,
+        currentWeek: currentWeek
     )
 }
 
-/// Restores a backup: workouts replace any existing (week, session); activities are added
-/// but de-duped (same kind + minute) so re-importing the same backup doesn't double them.
+/// What a restore changed.
+public struct BackupRestoreResult: Sendable, Equatable {
+    public var workoutsChanged: Int
+    public var activitiesAdded: Int
+    public var programRestored: Bool
+}
+
+/// Restores a backup by MERGING it into what's there (see `applyWorkoutPayload`): nothing
+/// logged since the backup is lost, rest days match by date, and re-importing the same
+/// file changes nothing. Activities are added but de-duped (same kind + minute). The
+/// program is restored when the backup has one; the caller restores block/week.
 @MainActor
-public func applyBackup(_ backup: BackupData, to context: ModelContext) {
-    for workout in backup.workouts { applyWorkoutPayload(workout, to: context) }
+@discardableResult
+public func applyBackup(_ backup: BackupData, to context: ModelContext) -> BackupRestoreResult {
+    var changed = 0
+    for workout in backup.workouts where applyWorkoutPayload(workout, to: context) { changed += 1 }
+    let programRestored = backup.program.map { applyProgramPayload($0, to: context) } ?? false
 
     let existing = (try? context.fetch(FetchDescriptor<Activity>())) ?? []
     let cal = Calendar.current
@@ -82,12 +113,15 @@ public func applyBackup(_ backup: BackupData, to context: ModelContext) {
         existing.contains { $0.kind == a.kind && $0.name == a.name
             && cal.isDate($0.date, equalTo: a.date, toGranularity: .minute) }
     }
+    var added = 0
     for a in backup.activities where !isDuplicate(a) {
         context.insert(Activity(name: a.name, kind: a.kind, durationMinutes: a.durationMinutes,
                                 distanceMiles: a.distanceMiles, flights: a.flights,
                                 activeCalories: a.activeCalories, detail: a.detail, date: a.date))
+        added += 1
     }
     context.saveOrReport()
+    return BackupRestoreResult(workoutsChanged: changed, activitiesAdded: added, programRestored: programRestored)
 }
 
 /// Wipes all logged data (keeps the program). Used by Settings → Reset.

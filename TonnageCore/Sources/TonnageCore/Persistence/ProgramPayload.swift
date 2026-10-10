@@ -58,9 +58,10 @@ public struct ProgramPayload: Codable, Sendable, Equatable {
     public static func decoded(from data: Data) -> ProgramPayload? { try? JSONDecoder().decode(Self.self, from: data) }
 }
 
-/// Rewrites the store's program to match `payload`. For the WATCH's local store, which
-/// only mirrors the phone: the phone's program is the source of truth. No-op (returns
-/// false) when the program already matches or the payload is empty.
+/// Rewrites the store's program to match `payload` — the watch mirroring the phone, or a
+/// backup restore. Logged history is detached from the old templates first (as
+/// `applySplit` does), so no logged workout is touched. No-op (returns false) when the
+/// program already matches or the payload is empty.
 @MainActor
 @discardableResult
 public func applyProgramPayload(_ payload: ProgramPayload, to context: ModelContext) -> Bool {
@@ -75,7 +76,18 @@ public func applyProgramPayload(_ payload: ProgramPayload, to context: ModelCont
     }
 
     program.name = payload.name
-    for old in program.orderedSessions { context.delete(old) }   // cascades to exercise templates
+    let oldSessions = program.orderedSessions
+    let oldSessionIDs = Set(oldSessions.map(\.persistentModelID))
+    let oldExerciseIDs = Set(oldSessions.flatMap { $0.orderedExercises }.map(\.persistentModelID))
+    if let workouts = try? context.fetch(FetchDescriptor<LoggedWorkout>()) {
+        for w in workouts {
+            if let t = w.sessionTemplate, oldSessionIDs.contains(t.persistentModelID) { w.sessionTemplate = nil }
+            for ex in (w.exercises ?? []) where ex.exerciseTemplate.map({ oldExerciseIDs.contains($0.persistentModelID) }) ?? false {
+                ex.exerciseTemplate = nil
+            }
+        }
+    }
+    for old in oldSessions { context.delete(old) }   // cascades to exercise templates
     for (i, s) in payload.sessions.enumerated() {
         let session = SessionTemplate(name: s.name, subtitle: s.subtitle, sortOrder: i)
         session.program = program

@@ -66,7 +66,11 @@ final class PhoneConnectivity: NSObject, @unchecked Sendable {
     private func apply(_ data: Data) {
         guard let payload = WorkoutPayload.decoded(from: data) else { return }
         Task { @MainActor in
-            if let context = self.container?.mainContext { applyWorkoutPayload(payload, to: context) }
+            // Merge, then echo the merged state back so the watch (and its complication)
+            // shows the combined session. The widget refreshes from the save itself.
+            if let context = self.container?.mainContext, applyWorkoutPayload(payload, to: context) {
+                self.pushContext()
+            }
         }
     }
 }

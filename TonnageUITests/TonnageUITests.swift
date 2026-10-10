@@ -4,12 +4,9 @@ import XCTest
 /// DEBUG build, handled in RootView) bypasses the first-run onboarding gates and seeds demo
 /// data — so these run deterministically against a populated app.
 ///
-/// ── ONE-TIME SETUP (Xcode GUI) ───────────────────────────────────────────────────────────
-/// This file isn't in a target yet. In Xcode: File ▸ New ▸ Target… ▸ "UI Testing Bundle",
-/// name it `TonnageUITests`, set the test host to the Tonnage app, point the target's folder
-/// at this directory, and enable it in the Tonnage scheme's Test action. Then it runs via
-/// `xcodebuild test -scheme Tonnage -destination 'platform=iOS Simulator,name=…'`.
-/// ─────────────────────────────────────────────────────────────────────────────────────────
+/// Target `TonnageUITests` (UI testing bundle, tests the Tonnage app) runs from the Tonnage
+/// scheme's Test action: `xcodebuild test -scheme Tonnage -only-testing:TonnageUITests
+/// -destination 'platform=iOS Simulator,name=…'`.
 final class TonnageUITests: XCTestCase {
 
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -45,7 +42,8 @@ final class TonnageUITests: XCTestCase {
         let app = launchedApp()
         app.tabBars.firstMatch.buttons["Data"].tap()
         // Seeded demo data → DATA shows real cards, not the empty state.
-        XCTAssertTrue(app.staticTexts["This Week"].waitForExistence(timeout: 5),
+        // Card labels render uppercased (`dsLabel`), and that's what accessibility reports.
+        XCTAssertTrue(app.staticTexts["THIS WEEK"].waitForExistence(timeout: 5),
                       "DATA should show the This Week card with seeded data")
         XCTAssertFalse(app.staticTexts["No Data Yet"].exists,
                        "DATA should not show the empty state when data is seeded")

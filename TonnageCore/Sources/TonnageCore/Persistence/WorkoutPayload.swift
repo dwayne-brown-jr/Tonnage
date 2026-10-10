@@ -216,6 +216,7 @@ enum WorkoutMerge {
 
     /// Payload values onto a phone set. Optional details only overwrite when present.
     static func copy(_ s: WorkoutPayload.Set, into set: LoggedSet) {
+        if s.completed && !set.completed { set.timestamp = .now }   // logged just now, elsewhere
         set.weight = s.weight
         set.reps = s.reps
         if let rpe = s.rpe { set.rpe = rpe }

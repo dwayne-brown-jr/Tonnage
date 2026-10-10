@@ -309,6 +309,7 @@ struct ExerciseLogCard: View {
             && (exercise.workout?.completedSetCount ?? 0) == 0
         withAnimation(DS.spring) { set.completed.toggle() }
         if set.completed {
+            set.timestamp = .now   // when it was done — the session's real length for Health
             Haptics.success()
             if isFirstCompletion, let workout = exercise.workout,
                Calendar.current.isDateInToday(workout.date) {

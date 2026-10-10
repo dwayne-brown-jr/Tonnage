@@ -11,6 +11,9 @@ struct DayDetailSheet: View {
     let activities: [Activity]
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    /// The workout waiting on delete confirmation.
+    @State private var pendingDelete: LoggedWorkout?
 
     private var cal: Calendar { .current }
     private var dayWorkouts: [LoggedWorkout] {
@@ -37,6 +40,16 @@ struct DayDetailSheet: View {
             }
             .navigationTitle(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
             .navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog("Delete this workout?",
+                                isPresented: Binding(get: { pendingDelete != nil },
+                                                     set: { if !$0 { pendingDelete = nil } }),
+                                titleVisibility: .visible,
+                                presenting: pendingDelete) { workout in
+                Button("Delete Workout", role: .destructive) { delete(workout) }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: { workout in
+                Text("Removes \(workout.sessionName.isEmpty ? "this day" : workout.sessionName) and all \(workout.completedSetCount) logged sets from Tonnage. Anything already saved to Apple Health stays there. This can't be undone.")
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }.fontWeight(.semibold)
@@ -61,16 +74,42 @@ struct DayDetailSheet: View {
         .padding(.vertical, DS.Spacing.xl)
     }
 
+    private func delete(_ workout: LoggedWorkout) {
+        pendingDelete = nil
+        context.delete(workout)
+        if context.saveOrReport() {
+            Haptics.warning()
+            PhoneConnectivity.shared.pushContext()   // the watch drops it too
+        } else {
+            context.rollback()
+        }
+    }
+
     @ViewBuilder private func workoutCard(_ workout: LoggedWorkout) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(workout.dayType == .lift
-                     ? (workout.sessionName.isEmpty ? "Workout" : workout.sessionName)
-                     : (workout.dayType == .activeRest ? "Active Recovery" : "Full Rest"))
-                    .font(DSFont.title).foregroundStyle(Color.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("BLOCK \(String(format: "%02d", workout.blockNumber)) · WEEK \(workout.weekNumber)")
-                    .dsLabel()
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(workout.dayType == .lift
+                         ? (workout.sessionName.isEmpty ? "Workout" : workout.sessionName)
+                         : (workout.dayType == .activeRest ? "Active Recovery" : "Full Rest"))
+                        .font(DSFont.title).foregroundStyle(Color.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("BLOCK \(String(format: "%02d", workout.blockNumber)) · WEEK \(workout.weekNumber)")
+                        .dsLabel()
+                }
+                Spacer(minLength: DS.Spacing.sm)
+                Menu {
+                    Button(role: .destructive) { pendingDelete = workout } label: {
+                        Label("Delete Workout", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Workout options")
             }
 
             if workout.dayType == .lift && workout.completedSetCount > 0 {

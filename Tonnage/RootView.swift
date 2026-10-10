@@ -244,7 +244,7 @@ private extension Image {
     /// Tab-bar glyph at a fixed, smaller size. The iOS 26 tab bar re-sizes SF Symbols to its
     /// own (large) default and ignores font/scale modifiers, so render the symbol into a
     /// template bitmap it displays as-is — the tab tint still applies.
-    static func tabIcon(_ name: String, pointSize: CGFloat = 18) -> Image {
+    static func tabIcon(_ name: String, pointSize: CGFloat = 15) -> Image {
         let config = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
         guard let symbol = UIImage(systemName: name, withConfiguration: config) else {
             return Image(systemName: name)

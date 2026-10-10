@@ -243,7 +243,7 @@ struct SettingsView: View {
                 Text("Model").dsLabel()
                 Spacer()
                 Picker("Model", selection: $coachModelRaw) {
-                    ForEach(CoachModel.allCases) { m in Text(m.label).tag(m.rawValue) }
+                    ForEach(CoachModel.available) { m in Text(m.label).tag(m.rawValue) }
                 }
                 .pickerStyle(.menu)
                 .tint(Color.accent)

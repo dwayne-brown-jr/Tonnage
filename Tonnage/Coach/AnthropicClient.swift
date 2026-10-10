@@ -13,6 +13,16 @@ enum CoachModel: String, CaseIterable, Identifiable {
         case .opus:  "Deep · Opus 4.8"
         }
     }
+
+    /// Models the current route can use. The shared proxy only allows Haiku; your own
+    /// key can use either.
+    static var available: [CoachModel] { CoachKey.usingSharedProxy ? [.haiku] : allCases }
+
+    /// The model a request actually uses on `route` — Opus falls back to Haiku on the proxy.
+    func effective(on route: CoachRoute) -> CoachModel {
+        if case .proxy = route { return .haiku }
+        return self
+    }
 }
 
 struct CoachMessage: Identifiable, Equatable {
@@ -65,8 +75,8 @@ struct AnthropicClient {
     private let anthropicEndpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
     /// Builds the request for whichever route. Direct calls carry the key + version header;
-    /// proxied calls carry only a device id (for the server-side quota) — the proxy injects
-    /// the key + version itself.
+    /// proxied calls carry the app token (which the proxy requires) and a device id — the
+    /// proxy injects the key + version itself.
     private func makeRequest(timeout: TimeInterval) -> URLRequest {
         let url: URL
         switch route {
@@ -82,6 +92,7 @@ struct AnthropicClient {
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         case .proxy:
+            request.setValue(BundledSecrets.proxyAppToken, forHTTPHeaderField: "x-app-token")
             request.setValue(DeviceID.current, forHTTPHeaderField: "x-device-id")
         }
         return request
@@ -102,7 +113,7 @@ struct AnthropicClient {
         var request = makeRequest(timeout: timeout)
 
         let body = RequestBody(
-            model: model.rawValue,
+            model: model.effective(on: route).rawValue,
             max_tokens: maxTokens,
             system: system,
             messages: history.map { .init(role: $0.role.rawValue, content: $0.text) }
@@ -135,7 +146,7 @@ struct AnthropicClient {
         var request = makeRequest(timeout: 90)
 
         let body = VisionRequestBody(
-            model: model.rawValue,
+            model: model.effective(on: route).rawValue,
             max_tokens: maxTokens,
             system: system,
             messages: [.init(role: "user", content: [

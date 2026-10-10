@@ -33,6 +33,19 @@ enum CoachKey {
     static var usingSharedProxy: Bool { ownKey == nil && proxyURL != nil }
 }
 
+/// Optional secrets with defaults, so an older `Secrets.swift` that predates a setting
+/// still compiles. Declare the property in `BundledSecrets` to override the default.
+protocol OptionalBundledSecrets {
+    /// Token the proxy requires in `x-app-token` (the Worker's APP_TOKEN secret).
+    static var proxyAppToken: String { get }
+}
+
+extension OptionalBundledSecrets {
+    static var proxyAppToken: String { "" }
+}
+
+extension BundledSecrets: OptionalBundledSecrets {}
+
 /// Stable per-install identifier sent to the proxy so it can meter the shared-key quota
 /// per device. Not tied to any Apple identifier; resets on reinstall.
 enum DeviceID {

@@ -114,7 +114,14 @@ export default {
     }
 
     if (!upstream.ok) {
-      // Billing, key and rate-limit details stay server-side.
+      // Billing, key and rate-limit details stay server-side: logged for `wrangler tail`,
+      // never returned to the caller.
+      let detail = "unknown";
+      try {
+        const e = (await upstream.json())?.error;
+        detail = `${e?.type || "unknown"}: ${String(e?.message || "").slice(0, 200)}`;
+      } catch {}
+      console.error(`upstream ${upstream.status} ${detail}`);
       const used = await refund(env, quotaKey);
       return json({ error: { message: "Upstream unavailable" } }, 502,
         { "x-quota-remaining": String(Math.max(0, limit - used)) });

@@ -440,6 +440,7 @@ struct DataView: View {
                     Text("Hard sets this week · productive range \(Analytics.weeklySetsMEV)–\(Analytics.weeklySetsMAV)")
                         .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
                 }
+                muscleHeatMap
                 VStack(spacing: DS.Spacing.sm) {
                     ForEach(muscleVolume) { muscleRow($0) }
                 }
@@ -450,6 +451,21 @@ struct DataView: View {
             .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
                 .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
         }
+    }
+
+    /// Body heat map for the same week: brightness = weighted sets (primary 1, secondary ½),
+    /// saturating at the top of the productive range.
+    private var muscleHeatMap: some View {
+        let load = muscleWeek.map { wk in Analytics.muscleLoad(scoped.filter { $0.weekNumber == wk }) } ?? [:]
+        let heat = load.mapValues { $0 / Double(Analytics.weeklySetsMAV) }
+        return VStack(spacing: DS.Spacing.xs) {
+            MuscleMapView(.heat(heat))
+                .frame(height: 210)
+                .frame(maxWidth: .infinity)
+            Text("Brighter = more sets · assisting muscles count ½")
+                .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+        }
+        .padding(.bottom, DS.Spacing.xs)
     }
 
     private func muscleRow(_ mv: Analytics.MuscleVolume) -> some View {

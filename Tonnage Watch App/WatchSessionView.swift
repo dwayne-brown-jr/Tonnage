@@ -58,8 +58,9 @@ struct WatchSessionView: View {
         WKInterfaceDevice.current().play(.start)
         Task {
             await workout.requestAuthorization()
-            workout.start()
+            workout.start(meta: model.liftMeta)
         }
+        FuelBridge.markSessionStarted(sessionName: model.sessionName)
     }
 
     private var statsHeader: some View {
@@ -112,7 +113,8 @@ struct WatchSessionView: View {
     }
 
     private func finish() {
-        workout.end()
+        workout.end(meta: model.liftMeta)
+        FuelBridge.markSessionCompleted(sessionName: model.sessionName)
         WatchConnectivityClient.shared.send(model.payload())
         WKInterfaceDevice.current().play(.success)
         dismiss()

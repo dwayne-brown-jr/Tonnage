@@ -92,6 +92,22 @@ final class WatchSessionModel {
     var totalVolume: Double {
         exercises.flatMap(\.sets).filter(\.completed).reduce(0) { $0 + $1.weight * Double($1.reps) }
     }
+    var totalReps: Int {
+        exercises.flatMap(\.sets).filter(\.completed).reduce(0) { $0 + $1.reps }
+    }
+
+    /// Snapshot for the HealthKit workout's metadata — the same `HealthMetadataKeys` the
+    /// phone stamps, so Tonnage Fuel reads one shape whichever device logged the session.
+    var liftMeta: LiftSessionMeta {
+        let compoundTop = exercises.first(where: { $0.isCompound })?.sets
+            .filter { $0.completed && !$0.isWarmup }
+            .max { ($0.weight, Double($0.reps)) < ($1.weight, Double($1.reps)) }?.rpe
+        let rpe = compoundTop ?? exercises.flatMap(\.sets).compactMap(\.rpe).first
+        return LiftSessionMeta(sessionName: sessionName, totalVolumeLb: totalVolume,
+                               setCount: completedSets, totalReps: totalReps,
+                               block: blockNumber, week: weekNumber,
+                               isDeload: weekNumber >= 5, topSetRPE: rpe)
+    }
 
     func addSet(toExerciseAt index: Int) {
         guard exercises.indices.contains(index) else { return }

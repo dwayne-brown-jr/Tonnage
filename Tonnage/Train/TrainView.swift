@@ -404,10 +404,9 @@ struct TrainView: View {
     private var largeHeader: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             HStack(alignment: .firstTextBaseline) {
-                // The home screen carries the app's name as a compact wordmark, so the week,
-                // session and readiness below get the attention.
+                // The home screen carries the app's name, at the same size as every tab title.
                 Text("TONNAGE")
-                    .font(.system(.title3, weight: .heavy).width(.condensed))
+                    .font(DSFont.screenTitle)
                     .foregroundStyle(Color.textPrimary)
                 Spacer()
                 blockMenu

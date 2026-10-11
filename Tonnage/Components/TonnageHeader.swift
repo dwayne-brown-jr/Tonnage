@@ -17,7 +17,7 @@ struct TonnageHeader<Trailing: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(DSFont.display)
+                .font(DSFont.screenTitle)
                 .foregroundStyle(Color.textPrimary)
             Spacer(minLength: DS.Spacing.sm)
             trailing()

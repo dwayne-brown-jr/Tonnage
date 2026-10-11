@@ -220,6 +220,21 @@ final class TrainStore {
 
     func save() { context?.saveOrReport() }
 
+    /// This exercise's top set week by week across the block on screen (same session), for
+    /// the week bars and the "+15 LB THIS BLOCK" chip. Fetches only that block + session,
+    /// so it's cheap enough to read on every render and is always current.
+    func blockProgress(for exercise: LoggedExercise) -> BlockProgress? {
+        guard let context, let w = workout, w.dayType == .lift, !exercise.isCardio,
+              !ExerciseLibrary.isTimedHold(exercise.name) else { return nil }
+        let block = w.blockNumber, session = w.sessionName
+        let descriptor = FetchDescriptor<LoggedWorkout>(
+            predicate: #Predicate { $0.blockNumber == block && $0.sessionName == session }
+        )
+        let workouts = (try? context.fetch(descriptor)) ?? []
+        return BlockProgress.build(from: workouts, exercise: exercise.name, sessionName: session,
+                                   block: block, currentWeek: w.weekNumber)
+    }
+
     // MARK: PR celebration
 
     /// Did this just-completed set beat the exercise's lifetime e1RM? Mirrors the

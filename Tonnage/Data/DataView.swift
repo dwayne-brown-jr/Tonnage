@@ -58,9 +58,12 @@ struct DataView: View {
                 Color.surface.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: DS.Spacing.lg) {
+                        if hasData {
+                            headline
+                            highlights
+                        }
                         if hasRecentDays { weekStripCard }
                         if hasData {
-                            summary
                             weeklyCard
                             if sessionsPerWeek > 0 { adherenceCard }
                             if !recentPRs.isEmpty { prsCard }
@@ -249,20 +252,94 @@ struct DataView: View {
 
     // MARK: Summary
 
-    private var summary: some View {
-        HStack(spacing: DS.Spacing.sm) {
-            stat(value: Analytics.totalVolume(scoped).formatted(.number.precision(.fractionLength(0))),
-                 label: "Block \(String(format: "%02d", currentBlock)) · lb", accent: true)
-            divider
-            stat(value: "\(Analytics.totalSets(scoped))", label: "Sets", accent: false)
-            divider
-            stat(value: "\(Analytics.sessionsLogged(scoped))", label: "Sessions", accent: false)
+    // MARK: Headline
+
+    /// The block in one line, poster-style: "BLOCK 01:" over "151,260 LB MOVED", with only the
+    /// number in orange — the one accent on the screen's most important fact.
+    private var headline: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("BLOCK \(String(format: "%02d", currentBlock)):")
+                .font(.system(size: 34, weight: .heavy).width(.condensed))
+                .foregroundStyle(Color.textPrimary)
+            (Text(Analytics.totalVolume(scoped).formatted(.number.precision(.fractionLength(0))))
+                .foregroundStyle(Color.accent)
+             + Text(" LB MOVED").foregroundStyle(Color.textPrimary))
+                .font(.system(size: 34, weight: .heavy).width(.condensed).monospacedDigit())
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(headlineDetail)
+                .font(.system(.footnote, weight: .medium))
+                .foregroundStyle(Color.textSecondary)
+                .padding(.top, 2)
         }
-        .padding(.vertical, DS.Spacing.md)
-        .padding(.horizontal, DS.Spacing.lg)
-        .frame(maxWidth: .infinity)
-        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous).strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var headlineDetail: String {
+        let prs = blockPRs.count
+        return "\(Analytics.totalSets(scoped)) hard sets · \(Analytics.sessionsLogged(scoped)) sessions · \(prs) PR\(prs == 1 ? "" : "s")"
+    }
+
+    /// PRs set during the active block (the headline + tile count them; the PR card below
+    /// keeps the lifetime feed).
+    private var blockPRs: [PRMoment] {
+        PersonalRecords.recentPRs(in: workouts, limit: 500).filter { $0.blockNumber == currentBlock }
+    }
+
+    // MARK: Highlights
+
+    /// Four at-a-glance tiles: PRs, streak, adherence, and the muscle getting the most work.
+    private var highlights: some View {
+        let streak = FatigueEngine.trainingStreak(workouts: workouts)
+        let topMuscle = muscleVolume.filter { $0.group != nil }.max { $0.sets < $1.sets }
+        let best = blockPRs.first
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: DS.Spacing.sm),
+                                   GridItem(.flexible(), spacing: DS.Spacing.sm)],
+                         spacing: DS.Spacing.sm) {
+            highlightTile("trophy.fill",
+                          title: blockPRs.isEmpty ? "No PRs yet" : "\(blockPRs.count) new PR\(blockPRs.count == 1 ? "" : "s")",
+                          detail: best.map { "\($0.exerciseName) \(CoachEngine.fmt($0.weight))×\($0.reps)" } ?? "This block")
+            highlightTile("flame.fill",
+                          title: "\(streak)-day streak",
+                          detail: FatigueEngine.recommendsRest(streak) ? "Time for a full rest day" : "Without a full rest")
+            if sessionsPerWeek > 0 {
+                highlightTile("target",
+                              title: "\(Int((adherence.completionPct * 100).rounded()))% adherence",
+                              detail: "\(adherence.sessionsCompleted) of \(adherence.sessionsPlanned) sessions")
+            }
+            if let top = topMuscle, let group = top.group {
+                highlightTile("chart.bar.fill",
+                              title: "\(group.label) leads",
+                              detail: "\(top.sets) hard sets this week")
+            }
+        }
+    }
+
+    private func highlightTile(_ symbol: String, title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color.accent)
+                .frame(width: 32, height: 32)
+                .background(Color.surfaceElevated2, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(.subheadline, weight: .bold))
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+                Text(detail)
+                    .font(.system(.caption))
+                    .foregroundStyle(Color.textTertiary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .padding(DS.Spacing.md)
+        .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous)
+            .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline))
+        .accessibilityElement(children: .combine)
     }
 
     private func stat(value: String, label: String, accent: Bool) -> some View {

@@ -93,11 +93,37 @@ No app update needed — the app never holds the key.
 - People on one network (home Wi-Fi, a gym) share one allowance. Raise `DAILY_LIMIT` if
   that bites.
 
+## Oura
+
+The Worker also handles the two Oura OAuth steps that need the client secret. The app
+keeps the tokens and reads Oura's data directly, so health data never passes through here.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /oura/callback` | Oura's redirect after consent; bounced to the app as `tonnage://oura?code=…&state=…` |
+| `POST /oura/token` | `{code}` → Oura tokens (app token required) |
+| `POST /oura/refresh` | `{refresh_token}` → new tokens (Oura rotates refresh tokens) |
+
+Setup, once:
+
+1. At [cloud.ouraring.com](https://cloud.ouraring.com) → **OAuth Applications**, create an app
+   with redirect URI `https://tonnage-coach.<your-subdomain>.workers.dev/oura/callback` and the
+   `daily`, `personal` and `heartrate` scopes.
+2. Put the client id in `wrangler.toml` (`OURA_CLIENT_ID`), store the secret, and deploy:
+
+```bash
+npx wrangler secret put OURA_CLIENT_SECRET
+npx wrangler deploy
+```
+
+An unreviewed Oura app can connect up to 10 Oura users.
+
 ## Tests
 
 ```bash
 node proxy.test.mjs      # request validation, auth, quota (KV fallback), upstream errors
 node quota-do.test.mjs   # the Durable Object quota path
+node oura.test.mjs       # the Oura OAuth endpoints
 ```
 
 ## How the app calls it

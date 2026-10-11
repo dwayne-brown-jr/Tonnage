@@ -9,6 +9,8 @@
 //   RATE_LIMIT_PER_MINUTE (var)  burst cap per network (default 20)
 //   QUOTA_DO           (Durable Object)  atomic counters — the production path
 //   QUOTA              (KV)      fallback counters when QUOTA_DO isn't bound
+//   OURA_CLIENT_ID     (var)     Oura OAuth app's client id (see "Oura" below)
+//   OURA_CLIENT_SECRET (secret)  Oura OAuth app's client secret — never leaves the Worker
 //
 // Every request is checked in this order: method, configuration, app token, content type,
 // size, JSON shape, model/max_tokens/messages, per-network burst limit, daily quota. The
@@ -31,6 +33,10 @@ const DAY_MS = 86_400_000;
 
 export default {
   async fetch(request, env) {
+    const path = new URL(request.url).pathname;
+    if (path.startsWith("/oura/")) {
+      return handleOura(request, env, path);
+    }
     if (request.method !== "POST") {
       return json({ error: { message: "Method not allowed" } }, 405);
     }
@@ -290,6 +296,122 @@ export class QuotaCounter {
   async alarm() {
     await this.state.storage.deleteAll();
   }
+}
+
+// MARK: - Oura
+//
+// Oura's API only takes OAuth, and its token endpoint needs the client secret, which can't
+// ship in the app. The Worker does the two secret-bearing steps; the app keeps the tokens
+// (Keychain) and calls Oura's data endpoints directly, so health data never passes through.
+//
+//   GET  /oura/callback   Oura redirects the browser here after consent; bounced to the app
+//                         as tonnage://oura?code=…&state=… (the app checks `state`).
+//   POST /oura/token      {code}           → {access_token, refresh_token, expires_in, …}
+//   POST /oura/refresh    {refresh_token}  → same shape (Oura rotates refresh tokens)
+//
+// The redirect URI is always derived from this Worker's own origin — never taken from the
+// caller — so it matches what's registered with Oura and can't be pointed elsewhere.
+
+const OURA_TOKEN_URL = "https://api.ouraring.com/oauth/token";
+const APP_CALLBACK = "tonnage://oura";
+const MAX_OURA_BODY_BYTES = 8_192;
+const OURA_TOKEN_FIELDS = ["access_token", "refresh_token", "expires_in", "token_type", "scope"];
+
+async function handleOura(request, env, path) {
+  if (path === "/oura/callback") {
+    if (request.method !== "GET") return json({ error: { message: "Method not allowed" } }, 405);
+    return ouraCallback(request);
+  }
+  if (path !== "/oura/token" && path !== "/oura/refresh") {
+    return json({ error: { message: "Not found" } }, 404);
+  }
+  if (request.method !== "POST") return json({ error: { message: "Method not allowed" } }, 405);
+  if (!env.APP_TOKEN || !env.OURA_CLIENT_ID || !env.OURA_CLIENT_SECRET) {
+    return json({ error: { message: "Oura not configured" } }, 500);
+  }
+  if (!tokensMatch(request.headers.get("x-app-token"), env.APP_TOKEN)) {
+    return json({ error: { message: "Unauthorized" } }, 401);
+  }
+  if (!(request.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
+    return json({ error: { message: "Content-Type must be application/json" } }, 415);
+  }
+  const raw = await request.arrayBuffer().catch(() => null);
+  if (!raw) return json({ error: { message: "Bad request" } }, 400);
+  if (raw.byteLength > MAX_OURA_BODY_BYTES) return json({ error: { message: "Request too large" } }, 413);
+  let body;
+  try {
+    body = JSON.parse(new TextDecoder().decode(raw));
+  } catch {
+    return json({ error: { message: "Bad request" } }, 400);
+  }
+
+  const form = new URLSearchParams({ client_id: env.OURA_CLIENT_ID, client_secret: env.OURA_CLIENT_SECRET });
+  if (path === "/oura/token") {
+    if (!isOpaqueToken(body?.code)) return json({ error: { message: "code is required" } }, 400);
+    form.set("grant_type", "authorization_code");
+    form.set("code", body.code);
+    form.set("redirect_uri", `${new URL(request.url).origin}/oura/callback`);
+    if (isOpaqueToken(body.code_verifier)) form.set("code_verifier", body.code_verifier);
+  } else {
+    if (!isOpaqueToken(body?.refresh_token)) return json({ error: { message: "refresh_token is required" } }, 400);
+    form.set("grant_type", "refresh_token");
+    form.set("refresh_token", body.refresh_token);
+  }
+
+  const network = networkKey(request);
+  const ratePerMinute = parseLimit(env.RATE_LIMIT_PER_MINUTE, DEFAULT_RATE_PER_MINUTE, DEFAULT_RATE_PER_MINUTE);
+  const rate = await consume(env, `oura-rate:${network}:${Math.floor(Date.now() / 60_000)}`, ratePerMinute, 120_000);
+  if (!rate.allowed) {
+    return json({ error: { message: "Too many requests — give it a minute, then try again." } }, 429, { "retry-after": "60" });
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(OURA_TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+  } catch {
+    return json({ error: { message: "Oura unavailable" } }, 502);
+  }
+
+  let data = null;
+  try { data = await upstream.json(); } catch {}
+  if (!upstream.ok) {
+    const code = typeof data?.error === "string" ? data.error : "unknown";
+    console.error(`oura token ${upstream.status} ${code}`);
+    // A rejected code or refresh token means the user has to connect again; anything else is
+    // Oura (or our app registration) having a problem. Neither leaks Oura's details.
+    if (upstream.status === 400 || upstream.status === 401) {
+      return json({ error: { message: "Oura sign-in expired — connect again.", code: "reconnect" } }, 401);
+    }
+    return json({ error: { message: "Oura unavailable" } }, 502);
+  }
+  if (!data || typeof data.access_token !== "string") {
+    return json({ error: { message: "Oura unavailable" } }, 502);
+  }
+  const out = {};
+  for (const k of OURA_TOKEN_FIELDS) if (data[k] !== undefined) out[k] = data[k];
+  return json(out, 200, { "cache-control": "no-store" });
+}
+
+/// Oura's consent redirect → back into the app. Passes through only `code`, `state` and
+/// `error`, each length-limited and URL-encoded.
+function ouraCallback(request) {
+  const params = new URL(request.url).searchParams;
+  const out = new URLSearchParams();
+  for (const k of ["code", "state", "error"]) {
+    const v = params.get(k);
+    if (v && v.length <= 512) out.set(k, v);
+  }
+  if (!out.has("code") && !out.has("error")) out.set("error", "missing_code");
+  return new Response(null, { status: 302, headers: { location: `${APP_CALLBACK}?${out}`, "cache-control": "no-store" } });
+}
+
+/// An OAuth code / token / verifier: a non-empty, reasonably sized string of URL-safe characters.
+function isOpaqueToken(v) {
+  return typeof v === "string" && v.length > 0 && v.length <= 2048 && /^[A-Za-z0-9._~+\/=-]+$/.test(v);
 }
 
 function json(obj, status, extraHeaders = {}) {

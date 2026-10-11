@@ -404,8 +404,9 @@ struct TrainView: View {
     private var largeHeader: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
             HStack(alignment: .firstTextBaseline) {
-                Text("TRAIN")
-                    .font(DSFont.displayXL)
+                // The home screen carries the app's name, at the same size as the other tabs' titles.
+                Text("TONNAGE")
+                    .font(DSFont.display)
                     .foregroundStyle(Color.textPrimary)
                 Spacer()
                 blockMenu
@@ -427,7 +428,7 @@ struct TrainView: View {
 
     private var compactBar: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("TRAIN")
+            Text("TONNAGE")
                 .font(.system(.headline, weight: .heavy).width(.condensed))
                 .foregroundStyle(Color.textPrimary)
             Spacer()

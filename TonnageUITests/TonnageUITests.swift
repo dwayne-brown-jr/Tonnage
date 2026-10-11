@@ -21,7 +21,7 @@ final class TonnageUITests: XCTestCase {
     @MainActor
     func testLaunchesToTrainWithoutCrashing() throws {
         let app = launchedApp()
-        XCTAssertTrue(app.staticTexts["TRAIN"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["TONNAGE"].waitForExistence(timeout: 10),
                       "App should launch straight to TRAIN under -uitesting (no crash, no gate)")
     }
 
@@ -30,7 +30,7 @@ final class TonnageUITests: XCTestCase {
         let app = launchedApp()
         let tabs = app.tabBars.firstMatch
         XCTAssertTrue(tabs.waitForExistence(timeout: 10), "Tab bar should appear")
-        for (tab, header) in [("Coach", "COACH"), ("Move", "MOVE"), ("Data", "DATA"), ("Train", "TRAIN")] {
+        for (tab, header) in [("Coach", "COACH"), ("Move", "MOVE"), ("Data", "DATA"), ("Train", "TONNAGE")] {
             tabs.buttons[tab].tap()
             XCTAssertTrue(app.staticTexts[header].firstMatch.waitForExistence(timeout: 5),
                           "\(header) header should appear after tapping \(tab)")

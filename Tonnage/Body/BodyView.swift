@@ -368,7 +368,7 @@ struct BodyView: View {
                             Image(systemName: "icloud.slash").font(.system(size: 18, weight: .semibold))
                             Text("On another\ndevice").font(.system(.caption2)).multilineTextAlignment(.center)
                         }
-                        .foregroundStyle(Color.textTertiary)
+                        .foregroundStyle(Color.textSecondary)
                     }
                     .frame(width: 116, height: 156)
                 }

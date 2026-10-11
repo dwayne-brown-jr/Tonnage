@@ -142,13 +142,14 @@ struct BodyScanSheet: View {
     private var saveBar: some View {
         Button { commit() } label: {
             Text("Save \(savableCount) Measurement\(savableCount == 1 ? "" : "s")")
-                .font(.system(.headline, weight: .bold)).foregroundStyle(Color.onAccent)
+                .font(.system(.headline, weight: .bold))
+                .foregroundStyle(savableCount == 0 ? Color.textSecondary : Color.onAccent)
                 .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.md)
-                .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+                .background(savableCount == 0 ? Color.surfaceElevated2 : Color.accent,
+                            in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(savableCount == 0)
-        .opacity(savableCount == 0 ? 0.5 : 1)
         .padding(DS.Spacing.lg)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(Color.hairline).frame(height: DS.Stroke.hairline) }

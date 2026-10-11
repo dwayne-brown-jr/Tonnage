@@ -7,22 +7,27 @@ struct RestTimerBar: View {
     @Environment(RestTimer.self) private var timer
 
     var body: some View {
-        HStack(spacing: DS.Spacing.md) {
+        HStack(spacing: DS.Spacing.sm) {
             ring
             VStack(alignment: .leading, spacing: 2) {
                 Text(timer.phase == .done ? "Rest Complete" : "Resting").dsLabel()
+                // Wraps to a second line rather than truncating — the exercise name is
+                // the point of this label.
                 Text(displayLabel)
                     .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(Color.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: DS.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
             controls
         }
-        .padding(.horizontal, DS.Spacing.lg)
+        .padding(.leading, DS.Spacing.md)
+        .padding(.trailing, DS.Spacing.sm)
         .padding(.vertical, DS.Spacing.sm)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous))
+        // Opaque top step, not a material: the bar floats over cards, and a blur at card
+        // brightness let the content scrolling beneath read through at the same level.
+        .background(Color.surfaceElevated2, in: RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous)
                 .strokeBorder(Color.accent.opacity(0.45), lineWidth: 1)
@@ -39,7 +44,7 @@ struct RestTimerBar: View {
 
     private var ring: some View {
         ZStack {
-            Circle().stroke(Color.surfaceElevated2, lineWidth: 6)
+            Circle().stroke(Color.surfaceElevated, lineWidth: 6)   // track recessed into the bar
             Circle()
                 .trim(from: 0, to: timer.phase == .done ? 1 : timer.progress)
                 .stroke(Color.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
@@ -65,7 +70,8 @@ struct RestTimerBar: View {
 
     @ViewBuilder private var controls: some View {
         if timer.phase == .running {
-            pill("+30s") { timer.addTime(30) }
+            pill("+30") { timer.addTime(30) }
+                .accessibilityLabel("Add 30 seconds")
             pill("Skip", prominent: true) { withAnimation(DS.spring) { timer.skip() } }
         } else {
             pill("Done", prominent: true) { withAnimation(DS.spring) { timer.skip() } }
@@ -76,15 +82,24 @@ struct RestTimerBar: View {
         Button(action: action) {
             Text(title)
                 .font(.system(.subheadline, weight: .bold))
+                .monospacedDigit()
                 .foregroundStyle(prominent ? Color.onAccent : Color.textPrimary)
-                .padding(.horizontal, DS.Spacing.md)
-                .padding(.vertical, DS.Spacing.sm)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .frame(minWidth: 52, minHeight: 44)    // full tap target; never squeezed by the label
                 .background(
                     RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                        .fill(prominent ? Color.accent : Color.surfaceElevated2)
+                        .fill(prominent ? Color.accent : Color.surfaceElevated)
                 )
+                .overlay {
+                    if !prominent {
+                        RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                            .strokeBorder(Color.hairline, lineWidth: DS.Stroke.hairline)
+                    }
+                }
         }
         .buttonStyle(.plain)
+        .fixedSize()
     }
 
     private func mmss(_ seconds: Int) -> String {

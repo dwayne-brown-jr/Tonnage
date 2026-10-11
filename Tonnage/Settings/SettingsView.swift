@@ -19,6 +19,7 @@ struct SettingsView: View {
 
     @State private var connecting = false
     @State private var apiKeyInput = ""
+    private var keyInputEmpty: Bool { apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty }
     @State private var keySet = Keychain.read(Keychain.apiKeyAccount) != nil
     @State private var keyError: String?
     @State private var feedbackNote: String?
@@ -267,7 +268,7 @@ struct SettingsView: View {
                 Spacer()
                 Text(keySet ? "Key Set" : "No Key")
                     .font(.system(.caption, weight: .bold))
-                    .foregroundStyle(keySet ? Color.success : Color.textTertiary)
+                    .foregroundStyle(keySet ? Color.success : Color.textSecondary)
                     .padding(.horizontal, DS.Spacing.sm).padding(.vertical, 3)
                     .background(Capsule().fill(Color.surfaceElevated2))
             }
@@ -312,13 +313,16 @@ struct SettingsView: View {
                     keyError = nil
                     Haptics.success()
                 } label: {
-                    Text("Save Key").font(.system(.subheadline, weight: .bold)).foregroundStyle(Color.onAccent)
+                    // Disabled = neutral surface, not a faded accent: dark text on half-opacity
+                    // orange smears into the card.
+                    Text("Save Key").font(.system(.subheadline, weight: .bold))
+                        .foregroundStyle(keyInputEmpty ? Color.textSecondary : Color.onAccent)
                         .frame(maxWidth: .infinity).padding(.vertical, DS.Spacing.sm)
-                        .background(Color.accent, in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                        .background(keyInputEmpty ? Color.surfaceElevated2 : Color.accent,
+                                    in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                .opacity(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                .disabled(keyInputEmpty)
 
                 if keySet {
                     Button {
@@ -375,7 +379,7 @@ struct SettingsView: View {
         // Honest three-state: Off (not connected) / No data (connected but nothing read —
         // e.g. no Apple Watch) / Connected (data flowing). Never a false green "Connected".
         let (text, color): (String, Color) =
-            !(health.hasRequested && health.isAvailable) ? ("Off", Color.textTertiary)
+            !(health.hasRequested && health.isAvailable) ? ("Off", Color.textSecondary)
             : health.hasRecoveryData ? ("Connected", Color.success)
             : ("No data", Color.textSecondary)
         return Text(text)

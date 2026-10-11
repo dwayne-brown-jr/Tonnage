@@ -96,6 +96,9 @@ struct ExerciseLogCard: View {
                         || store.isSupersetContinuation(exercise) {
                         tag("SUPERSET")
                     }
+                    if let p = progress, let chip = p.chipText {
+                        progressChip(chip, spoken: p.chipSpokenText ?? chip)
+                    }
                 }
                 Text(exercise.name)
                     .font(.system(.headline, weight: .semibold))
@@ -186,6 +189,57 @@ struct ExerciseLogCard: View {
             .background(Capsule().fill(complete ? Color.success : Color.surfaceElevated2))
     }
 
+    /// This block's week-by-week top sets (nil for cardio and timed holds).
+    private var progress: BlockProgress? { store.blockProgress(for: exercise) }
+
+    /// "+15 LB": a solid light chip so this block's gain reads at a glance, apart from the
+    /// orange category tags beside it.
+    private func progressChip(_ text: String, spoken: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .black))
+            Text(text).font(.system(size: 9, weight: .heavy)).kerning(0.6)
+        }
+        .foregroundStyle(Color.surface)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .background(Color.textPrimary, in: Capsule())
+        .lineLimit(1)
+        .fixedSize()
+        .accessibilityLabel(spoken)
+    }
+
+    /// The block so far: one bar per week for this exercise's top set, this week in orange.
+    /// Empty weeks keep their slot so W1–W5 always line up.
+    private func weekBars(_ p: BlockProgress) -> some View {
+        HStack(alignment: .bottom, spacing: DS.Spacing.xs) {
+            ForEach(p.weeks) { w in
+                let isCurrent = w.week == p.currentWeek
+                VStack(spacing: 4) {
+                    if let weight = w.weight {
+                        Text(weight > 0 ? CoachEngine.fmt(weight) : "\(w.reps ?? 0)r")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(isCurrent ? Color.textPrimary : Color.textTertiary)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(isCurrent && w.weight != nil ? Color.accent
+                              : (w.weight == nil ? Color.surfaceElevated2.opacity(0.5) : Color.surfaceElevated2))
+                        .frame(height: max(6, 40 * p.barFraction(w)))
+                    Text("W\(w.week)")
+                        .font(.system(size: 9, weight: .heavy)).kerning(0.6)
+                        .foregroundStyle(isCurrent ? Color.textPrimary : Color.textTertiary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: 72, alignment: .bottom)
+        .animation(DS.spring, value: p)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Top set by week: " + p.weeks.compactMap { w in
+            w.weight.map { "week \(w.week) \($0 > 0 ? "\(CoachEngine.fmt($0)) pounds" : "\(w.reps ?? 0) reps")" }
+        }.joined(separator: ", "))
+    }
+
     private func tag(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 9, weight: .heavy))
@@ -200,6 +254,7 @@ struct ExerciseLogCard: View {
 
     private var expandedBody: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.md) {
+            if let p = progress, p.hasHistory { weekBars(p) }
             if let call = guidance?.call { coachsCallBanner(call) }
             if let last = guidance?.last { lastWeekLine(last) }
             if !exercise.prescriptionNotes.isEmpty {

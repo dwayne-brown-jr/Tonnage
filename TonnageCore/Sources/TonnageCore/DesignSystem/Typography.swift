@@ -12,6 +12,9 @@ public enum DSFont {
     // Display / headers — heavy + condensed.
     public static var displayXL: Font { .system(.largeTitle, design: .default, weight: .heavy).width(.condensed) }
     public static var display:   Font { .system(.title,      design: .default, weight: .heavy).width(.condensed) }
+    /// Tab screen titles (TONNAGE, COACH, MOVE, DATA, SETTINGS): a compact wordmark, so
+    /// the content under it gets the attention.
+    public static var screenTitle: Font { .system(.title3,   design: .default, weight: .heavy).width(.condensed) }
     public static var title:     Font { .system(.title2,     design: .default, weight: .bold ).width(.condensed) }
     public static var headline:  Font { .system(.headline) }
 

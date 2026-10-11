@@ -10,7 +10,7 @@ DAILY_LIMIT = "30"
 RATE_LIMIT_PER_MINUTE = "20"
 # Oura OAuth app's client id (not a secret). Empty = the /oura/* endpoints answer "Oura not
 # configured". The client SECRET is a Worker secret: `wrangler secret put OURA_CLIENT_SECRET`.
-OURA_CLIENT_ID = ""
+OURA_CLIENT_ID = "eea06ed5-b60a-41b8-91b2-36a7d9afad55"
 
 # Atomic quota + rate counters. One Durable Object per counter key; each handles one
 # request at a time, so concurrent calls can't slip past the limit.

@@ -91,7 +91,8 @@ struct CoachView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(DS.Spacing.lg)
+                .padding(.horizontal, DS.Spacing.screen)
+                .padding(.vertical, DS.Spacing.lg)
                 .animation(DS.spring, value: vm.messages.count)
                 .animation(DS.spring, value: vm.isSending)
             }
@@ -185,7 +186,7 @@ struct CoachView: View {
             .buttonStyle(.plain)
             .disabled(!canSend)
         }
-        .padding(.horizontal, DS.Spacing.lg)
+        .padding(.horizontal, DS.Spacing.screen)
         .padding(.vertical, DS.Spacing.md)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(Color.hairline).frame(height: DS.Stroke.hairline) }

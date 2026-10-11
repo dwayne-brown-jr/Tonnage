@@ -53,6 +53,8 @@ final class HealthKitManager {
     private(set) var latestRespiratoryRate: Double?         // breaths/min
     private(set) var respiratoryRateBaseline: Double?       // ~14-day mean
     private(set) var trainedYesterday: Bool = false
+    /// When `refresh()` last finished, so the UI can show that it actually ran.
+    private(set) var lastRefreshedAt: Date?
 
     /// Whether the user has been through the auth prompt (HealthKit hides read status).
     var hasRequested: Bool {
@@ -108,10 +110,11 @@ final class HealthKitManager {
             try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
             hasRequested = true
             authedSchemaVersion = Self.authSchemaVersion
-            await refresh()
         } catch {
-            // Leave data empty; UI shows the connect affordance.
+            // The prompt can fail (e.g. a type this device doesn't support) without taking away
+            // access already granted — still read whatever we can.
         }
+        if hasRequested { await refresh() }
     }
 
     /// Re-request authorization for connected users when new read types ship (e.g. body
@@ -132,6 +135,19 @@ final class HealthKitManager {
         await loadRespiratory()
         await loadTrainedYesterday()
         publishReadinessToFuel()
+        lastRefreshedAt = .now
+    }
+
+    /// Which recovery signals the last refresh found, e.g. "HRV, resting HR, sleep" — shown
+    /// under Refresh so a missing signal (say, sleep not synced from a ring yet) is visible.
+    var foundSignals: [String] {
+        var s: [String] = []
+        if latestHRV != nil { s.append("HRV") }
+        if latestRestingHR != nil { s.append("resting HR") }
+        if lastNightSleepHours != nil { s.append("sleep") }
+        if latestBodyTempC != nil { s.append("temperature") }
+        if latestRespiratoryRate != nil { s.append("breathing rate") }
+        return s
     }
 
     /// Mirror today's readiness into the App Group so Tonnage Fuel can adjust targets to

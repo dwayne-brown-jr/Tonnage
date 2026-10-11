@@ -39,6 +39,16 @@ struct ReadinessCard: View {
                         .foregroundStyle(bandColor)
                         .lineLimit(2)
                         .minimumScaleFactor(0.6)
+                    if readiness.source == .oura {
+                        // Oura's own score — say so, so it's never mistaken for Tonnage's.
+                        Text("OURA")
+                            .font(.system(.caption2, weight: .heavy).width(.condensed))
+                            .kerning(0.4)
+                            .foregroundStyle(Color.textSecondary)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .overlay(Capsule().strokeBorder(Color.textTertiary, lineWidth: DS.Stroke.hairline))
+                            .accessibilityLabel("from Oura")
+                    }
                     infoButton
                 }
                 Text(today ?? readiness.trainingNote)
@@ -63,7 +73,7 @@ struct ReadinessCard: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpen() }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Readiness \(readiness.score.map(String.init) ?? "unavailable"), \(readiness.headline). \(today ?? readiness.trainingNote)")
+        .accessibilityLabel("Readiness \(readiness.score.map(String.init) ?? "unavailable")\(readiness.source == .oura ? " from Oura" : ""), \(readiness.headline). \(today ?? readiness.trainingNote)")
         .accessibilityHint("Opens recovery details")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }

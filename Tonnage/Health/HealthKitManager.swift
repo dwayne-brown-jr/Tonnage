@@ -55,6 +55,9 @@ final class HealthKitManager {
     private(set) var trainedYesterday: Bool = false
     /// When `refresh()` last finished, so the UI can show that it actually ran.
     private(set) var lastRefreshedAt: Date?
+    /// Today's readiness straight from Oura when the account is connected and the ring has
+    /// synced — preferred over Tonnage's own Health-based score (see `currentReadiness`).
+    private(set) var ouraReadiness: Readiness?
 
     /// Whether the user has been through the auth prompt (HealthKit hides read status).
     var hasRequested: Bool {
@@ -134,6 +137,7 @@ final class HealthKitManager {
         await loadBodyTemp()
         await loadRespiratory()
         await loadTrainedYesterday()
+        ouraReadiness = await OuraService.shared.todayReadiness()
         publishReadinessToFuel()
         lastRefreshedAt = .now
     }
@@ -156,9 +160,11 @@ final class HealthKitManager {
         FuelBridge.writeReadiness(currentReadiness())
     }
 
-    /// Today's training-readiness read, built from the latest HealthKit signals.
+    /// Today's training-readiness read: Oura's own score when it's connected and has one for
+    /// today, otherwise Tonnage's read of the latest HealthKit signals.
     func currentReadiness() -> Readiness {
-        ReadinessEngine.evaluate(ReadinessInputs(
+        if let ouraReadiness { return ouraReadiness }
+        return ReadinessEngine.evaluate(ReadinessInputs(
             hrvMs: latestHRV, hrvBaselineMs: hrvBaseline,
             restingHR: latestRestingHR, restingHRBaseline: restingHRBaseline,
             sleepHours: lastNightSleepHours, trainedYesterday: trainedYesterday,

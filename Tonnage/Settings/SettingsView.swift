@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import CloudKit
+import AuthenticationServices
 import TonnageCore
 
 /// SETTINGS: AI coach (key + model), Apple Health, rest-timer defaults, and data export/import.
@@ -33,6 +34,10 @@ struct SettingsView: View {
     @State private var showImporter = false
     @State private var showResetConfirm = false
     @State private var importMessage: String?
+    @Environment(\.webAuthenticationSession) private var webAuth
+    @State private var oura = OuraService.shared
+    @State private var ouraBusy = false
+    @State private var ouraMessage: String?
     /// A backup that's been read and is waiting on the user's go-ahead.
     @State private var pendingRestore: BackupData?
     @Query(sort: \Program.createdAt) private var programs: [Program]
@@ -59,6 +64,7 @@ struct SettingsView: View {
                         splitCard
                         coachCard
                         healthCard
+                        ouraCard
                         restTimerCard
                         remindersCard
                         howItWorksCard
@@ -380,6 +386,117 @@ struct SettingsView: View {
                 connectButton(title: "Connect Apple Health")
             }
         }
+    }
+
+    // MARK: Oura
+
+    private var ouraCard: some View {
+        card {
+            HStack {
+                Label("Oura", systemImage: "circle.circle")
+                    .font(.system(.headline, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                pill(ouraStatusText.text, color: ouraStatusText.color)
+            }
+
+            Text(oura.isConnected
+                 ? "Your readiness card shows Oura's score and what's behind it. Data goes straight from Oura to this phone."
+                 : "Connect your Oura account to use Oura's readiness score — the one in the Oura app — instead of Tonnage's estimate from Apple Health.")
+                .font(.system(.caption2))
+                .foregroundStyle(Color.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if oura.isConnected {
+                HStack(spacing: DS.Spacing.sm) {
+                    ouraButton("Refresh", systemImage: "arrow.clockwise", filled: true) {
+                        await health.refresh()
+                        ouraMessage = oura.hasTodayScore ? nil
+                            : "No Oura score for today yet — open the Oura app to sync your ring."
+                    }
+                    ouraButton("Disconnect", systemImage: "xmark", filled: false) {
+                        oura.disconnect()
+                        await health.refresh()
+                        ouraMessage = "Disconnected. Readiness is back to Tonnage's Apple Health estimate."
+                    }
+                }
+                if let at = oura.lastSyncedAt {
+                    Text("Synced \(at.formatted(date: .omitted, time: .shortened))\(oura.hasTodayScore ? "" : " · no score for today yet")")
+                        .font(.system(.caption2, weight: .medium))
+                        .foregroundStyle(Color.textSecondary)
+                }
+            } else {
+                ouraButton(oura.status == .needsReconnect ? "Reconnect Oura" : "Connect Oura",
+                           systemImage: "link", filled: true) { await connectOura() }
+            }
+
+            if let ouraMessage {
+                Text(ouraMessage)
+                    .font(.system(.caption2, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var ouraStatusText: (text: String, color: Color) {
+        switch oura.status {
+        case .connected:          return ("Connected", Color.success)
+        case .disconnected:       return ("Off", Color.textSecondary)
+        case .needsReconnect:     return ("Reconnect", Color.accent)
+        case .membershipRequired: return ("Membership needed", Color.accent)
+        }
+    }
+
+    private func connectOura() async {
+        guard let url = oura.authorizationURL() else {
+            ouraMessage = OuraService.OuraError.notConfigured.errorDescription
+            return
+        }
+        do {
+            let callback = try await webAuth.authenticate(using: url, callbackURLScheme: "tonnage")
+            try await oura.completeConnection(callbackURL: callback)
+            await health.refresh()
+            Haptics.success()
+            ouraMessage = oura.hasTodayScore ? "Connected — your readiness now comes from Oura."
+                : "Connected. Oura has no score for today yet — open the Oura app to sync your ring."
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            ouraMessage = nil
+        } catch {
+            Haptics.warning()
+            ouraMessage = (error as? LocalizedError)?.errorDescription ?? OuraService.OuraError.network.errorDescription
+        }
+    }
+
+    private func ouraButton(_ title: String, systemImage: String, filled: Bool,
+                            action: @escaping () async -> Void) -> some View {
+        Button {
+            ouraBusy = true
+            Task {
+                await action()
+                ouraBusy = false
+            }
+        } label: {
+            HStack(spacing: DS.Spacing.sm) {
+                if ouraBusy && filled { ProgressView().tint(Color.onAccent) }
+                Label(title, systemImage: systemImage).font(.system(.subheadline, weight: .bold))
+            }
+            .foregroundStyle(filled ? Color.onAccent : Color.textPrimary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, DS.Spacing.md)
+            .background(filled ? Color.accent : Color.surfaceElevated2,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(ouraBusy)
+    }
+
+    private func pill(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(.caption, weight: .bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, DS.Spacing.sm).padding(.vertical, 3)
+            .background(Capsule().fill(Color.surfaceElevated2))
     }
 
     private var statusPill: some View {

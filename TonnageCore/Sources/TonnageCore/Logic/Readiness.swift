@@ -67,6 +67,10 @@ public struct Readiness: Sendable, Equatable {
     public let drivers: [Driver]
     public let headline: String     // short, e.g. "Ready"
     public let trainingNote: String // one-line guidance
+    /// Where the score came from: Tonnage's own read of Apple Health, or Oura's score.
+    public var source: Source = .health
+
+    public enum Source: String, Sendable { case health, oura }
 
     /// When true, the progression engine should hold loads rather than add — you're
     /// under-recovered, so chasing PRs today isn't the move.
@@ -159,14 +163,20 @@ public enum ReadinessEngine {
         }
 
         let final = Int(clamp(score, 0, 100).rounded())
-        let band: Readiness.Band = final >= 80 ? .primed : (final >= 65 ? .ready : (final >= 45 ? .compromised : .drained))
+        let band = band(for: final)
         return Readiness(score: final, band: band, drivers: drivers,
                          headline: headline(band), trainingNote: note(band))
     }
 
+    /// The band for a 0–100 score — shared by Tonnage's score and Oura's, so the legend on
+    /// the readiness card holds for both.
+    static func band(for score: Int) -> Readiness.Band {
+        score >= 80 ? .primed : (score >= 65 ? .ready : (score >= 45 ? .compromised : .drained))
+    }
+
     // MARK: Copy
 
-    private static func headline(_ b: Readiness.Band) -> String {
+    static func headline(_ b: Readiness.Band) -> String {
         switch b {
         case .primed:      "Primed"
         case .ready:       "Ready"
@@ -176,7 +186,7 @@ public enum ReadinessEngine {
         }
     }
 
-    private static func note(_ b: Readiness.Band) -> String {
+    static func note(_ b: Readiness.Band) -> String {
         switch b {
         case .primed:      "Green light — chase your top sets and progress as planned."
         case .ready:       "Recovered. Progress as planned."

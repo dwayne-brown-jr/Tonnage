@@ -66,7 +66,7 @@ struct RootView: View {
             restTimer.handleScenePhase(phase)
             // Re-read recovery on foreground so readiness reflects last night's data once a ring/
             // watch has synced it to Health — not just the cold-launch read. (Skips the demo feed.)
-            if phase == .active, health.hasRequested {
+            if phase == .active, health.hasRequested || OuraService.shared.isStale {
 #if DEBUG
                 if health.isDemoRecovery { return }
 #endif
@@ -118,6 +118,8 @@ struct RootView: View {
                 await health.upgradeAuthorizationIfNeeded()   // prompt once for newly-added read types (temp, respiratory)
                 await health.refresh()
                 await health.importExternalWorkouts(into: modelContext)
+            } else if OuraService.shared.isConnected {
+                await health.refresh()   // Oura-only users still get today's readiness
             }
 #if DEBUG
             health.applyDemoRecoveryIfEnabled()

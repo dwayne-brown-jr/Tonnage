@@ -152,11 +152,56 @@ struct EditExerciseSheet: View {
                 } else {
                     Text("Suggestions").dsLabel()
                 }
+                muscleComparison(original: original)
                 chipGrid(alts)
                 Text("Pick one, or type your own below.")
                     .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
             }
         }
+    }
+
+    /// Current movement's body map beside the picked swap's, so the trade-off is visible
+    /// (e.g. incline press shifts work to the upper chest). Hidden for unknown movements.
+    @ViewBuilder private func muscleComparison(original: String) -> some View {
+        if let current = ExerciseLibrary.muscleTargets(for: original) {
+            let picked = ExerciseLibrary.muscleTargets(for: name)
+            HStack(alignment: .center, spacing: DS.Spacing.sm) {
+                comparisonSide("Now", title: original, targets: current)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(picked == nil ? Color.textTertiary : Color.accent)
+                if let picked {
+                    comparisonSide("Swap", title: name, targets: picked)
+                } else {
+                    VStack(spacing: DS.Spacing.xs) {
+                        RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                            .strokeBorder(Color.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                            .overlay(Text("Pick a swap").font(.system(.caption2, weight: .medium))
+                                .foregroundStyle(Color.textTertiary))
+                            .frame(height: 96)
+                        Text(" ").font(.system(.caption2))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(DS.Spacing.md)
+            .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .animation(DS.spring, value: picked)
+        }
+    }
+
+    private func comparisonSide(_ label: String, title: String, targets: MuscleTargets) -> some View {
+        VStack(spacing: DS.Spacing.xs) {
+            MuscleMapView(.targets(targets), showsCaptions: false)
+                .frame(height: 96)
+            Text(title)
+                .font(.system(.caption2, weight: .semibold))
+                .foregroundStyle(Color.textSecondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(title)")
     }
 
     /// Optional AI pass — smarter, context-aware alternatives (factors in your goal +

@@ -14,6 +14,9 @@ public enum DS {
         public static let lg: CGFloat = 24
         public static let xl: CGFloat = 32
         public static let xxl: CGFloat = 48
+        /// Gap between a tab's content (title, cards) and the screen edge — the same on
+        /// every tab, so titles and cards don't shift when switching tabs.
+        public static let screen: CGFloat = 16
     }
 
     /// Corner-radius family. Brutalist tone favors small/sharp corners.

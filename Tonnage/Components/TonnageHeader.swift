@@ -22,7 +22,7 @@ struct TonnageHeader<Trailing: View>: View {
             Spacer(minLength: DS.Spacing.sm)
             trailing()
         }
-        .padding(.horizontal, DS.Spacing.lg)
+        .padding(.horizontal, DS.Spacing.screen)
         .padding(.top, DS.Spacing.sm)
         .padding(.bottom, DS.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -33,7 +33,8 @@ struct MoveView: View {
                         if health.hasRequested { healthImport }
                         recent
                     }
-                    .padding(DS.Spacing.lg)
+                    .padding(.horizontal, DS.Spacing.screen)
+                    .padding(.vertical, DS.Spacing.lg)
                     .padding(.bottom, DS.Spacing.xxl)
                 }
             }

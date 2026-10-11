@@ -67,7 +67,10 @@ struct TrainView: View {
                         largeHeader
                         contentStack
                     }
-                    .padding(.horizontal, DS.Spacing.lg)
+                    .padding(.horizontal, DS.Spacing.screen)
+                    // Exactly the screen's width: a wide child (the session row) used to
+                    // stretch this column past the edges, shifting every margin by ~9pt.
+                    .containerRelativeFrame(.horizontal)
                     .padding(.bottom, DS.Spacing.xxl)
                 }
                 .scrollDismissesKeyboard(.interactively)
@@ -79,7 +82,7 @@ struct TrainView: View {
 
                 if let pr = store.celebration {
                     PRToast(pr: pr) { store.dismissCelebration() }
-                        .padding(.horizontal, DS.Spacing.lg)
+                        .padding(.horizontal, DS.Spacing.screen)
                         .padding(.top, DS.Spacing.sm)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .zIndex(2)
@@ -438,7 +441,7 @@ struct TrainView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, DS.Spacing.lg)
+        .padding(.horizontal, DS.Spacing.screen)
         .padding(.vertical, DS.Spacing.sm)
         .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial)

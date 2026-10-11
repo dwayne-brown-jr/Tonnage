@@ -276,11 +276,29 @@ public enum FuelBridge {
 
     // MARK: Fuel → Tonnage
 
-    /// Fuel's status for TODAY, or nil if absent, unreadable, or stale (a different `dayKey`).
+    /// The nutrition-day key for `date`. Fuel's nutrition day runs 04:00 → 04:00 local
+    /// time: before 4am, the key is the previous calendar date (a 1:30am meal still
+    /// belongs to the previous day). Computed on the calendar, not as "date − 4 h",
+    /// which is off by an hour on daylight-saving days. Shared contract rule; Fuel's
+    /// `FuelStatus.isCurrent(at:)` implements the same check.
+    public static func nutritionDayKey(_ date: Date, calendar: Calendar = .current) -> String {
+        guard calendar.component(.hour, from: date) < 4,
+              let previous = calendar.date(byAdding: .day, value: -1, to: date) else {
+            return dayKey(date, calendar: calendar)
+        }
+        return dayKey(previous, calendar: calendar)
+    }
+
+    /// Fuel's status for the day the athlete is in, or nil if absent, unreadable, or stale.
+    ///
+    /// Fuel stamps its status with the nutrition-day key, so between 00:00 and 04:00 the
+    /// current status carries yesterday's calendar date. Accept that key as well as the
+    /// plain calendar key (what older Fuel builds wrote); anything else is stale.
     public static func readFuelStatus(now: Date = .now,
+                                      calendar: Calendar = .current,
                                       defaults: UserDefaults? = AppGroup.defaults) -> FuelStatus? {
-        guard let status = read(FuelStatus.self, key: Key.fuelStatus, from: defaults),
-              status.dayKey == dayKey(now) else { return nil }
-        return status
+        guard let status = read(FuelStatus.self, key: Key.fuelStatus, from: defaults) else { return nil }
+        let current = [nutritionDayKey(now, calendar: calendar), dayKey(now, calendar: calendar)]
+        return current.contains(status.dayKey) ? status : nil
     }
 }

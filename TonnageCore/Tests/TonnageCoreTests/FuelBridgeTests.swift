@@ -229,9 +229,34 @@ struct FuelBridgeTests {
     @Test("A status from another day is ignored")
     func ignoresStaleStatus() {
         let defaults = makeDefaults()
-        let now = Date()
+        // Midday, so yesterday's key can't be today's nutrition day.
+        let now = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 12))!
         writeFuelStatus(defaults, dayKey: FuelBridge.dayKey(now.addingTimeInterval(-86_400)))
         #expect(FuelBridge.readFuelStatus(now: now, defaults: defaults) == nil)
+    }
+
+    @Test("Between midnight and 4am, Fuel's status for the nutrition day still shows")
+    func acceptsNutritionDayKeyBefore4am() {
+        let defaults = makeDefaults()
+        let cal = Calendar.current
+        let oneThirty = cal.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 1, minute: 30))!
+        // Fuel wrote the 7th's key (4am cutoff) — this is the day the athlete is still in.
+        writeFuelStatus(defaults, dayKey: "2026-03-07")
+        #expect(FuelBridge.readFuelStatus(now: oneThirty, defaults: defaults)?.dayType == "lift")
+        // An older Fuel build writing the calendar key is still accepted.
+        writeFuelStatus(defaults, dayKey: "2026-03-08")
+        #expect(FuelBridge.readFuelStatus(now: oneThirty, defaults: defaults) != nil)
+        // After 4am the 7th's status is yesterday's.
+        writeFuelStatus(defaults, dayKey: "2026-03-07")
+        let fourOhFive = cal.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 4, minute: 5))!
+        #expect(FuelBridge.readFuelStatus(now: fourOhFive, defaults: defaults) == nil)
+    }
+
+    @Test("Nutrition-day key uses the 4am cutoff")
+    func nutritionDayKey() {
+        let cal = Calendar.current
+        #expect(FuelBridge.nutritionDayKey(cal.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 3, minute: 59))!) == "2026-03-07")
+        #expect(FuelBridge.nutritionDayKey(cal.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 4))!) == "2026-03-08")
     }
 
     @Test("Missing or unreadable status reads as nil, never a crash")

@@ -46,7 +46,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000000000000000000020"
             BuildableName = "Tonnage Watch App.app"
-            BlueprintName = "Tonnage Watch App"
             ReferencedContainer = "container:Tonnage.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +62,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000000000000000000020"
             BuildableName = "Tonnage Watch App.app"
-            BlueprintName = "Tonnage Watch App"
             ReferencedContainer = "container:Tonnage.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

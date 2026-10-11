@@ -39,6 +39,17 @@
                ReferencedContainer = "container:Tonnage.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "1A0000000000000000000032"
+               BuildableName = "TonnageUITests.xctest"
+               BlueprintName = "TonnageUITests"
+               ReferencedContainer = "container:Tonnage.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

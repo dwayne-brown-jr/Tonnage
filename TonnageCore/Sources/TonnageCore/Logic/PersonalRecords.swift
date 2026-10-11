@@ -58,10 +58,12 @@ public enum PersonalRecords {
                     if e > bestE { bestE = e; bestSet = set }
                 }
                 guard let bestSet, bestE > 0 else { continue }
-                let prev = bestByExercise[ex.name] ?? 0
+                // Keyed on the canonical name so "Bench Press" and "bench press" share one history.
+                let key = ExerciseLibrary.historyKey(for: ex.name)
+                let prev = bestByExercise[key] ?? 0
                 if prev > 0, bestE > prev {
                     prs.append(PRMoment(
-                        exerciseName: ex.name,
+                        exerciseName: ExerciseLibrary.canonicalDisplayName(for: ex.name),
                         weight: bestSet.weight, reps: bestSet.reps,
                         estimatedOneRM: bestE,
                         date: w.date,
@@ -69,7 +71,7 @@ public enum PersonalRecords {
                         isCompound: ex.isCompound
                     ))
                 }
-                if bestE > prev { bestByExercise[ex.name] = bestE }
+                if bestE > prev { bestByExercise[key] = bestE }
             }
         }
         return Array(prs.sorted { $0.date > $1.date }.prefix(limit))

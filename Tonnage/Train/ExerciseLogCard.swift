@@ -21,9 +21,14 @@ struct ExerciseLogCard: View {
 
     private var isExpanded: Bool { expandedID == exercise.persistentModelID }
     private var metrics: [SetMetric] { ExerciseLibrary.metrics(for: exercise.name, isCardio: exercise.isCardio) }
+    /// Planks, hangs and other holds log time — no plates, ghosts, drop sets or load cues.
+    private var isTimedHold: Bool { !exercise.isCardio && ExerciseLibrary.isTimedHold(exercise.name) }
+    /// Weight × reps logging, where the load tools apply.
+    private var isLoaded: Bool { !exercise.isCardio && !isTimedHold }
 
     private var prescription: String {
         if exercise.isCardio { return "\(exercise.repRange) · \(exercise.rpeTarget)" }
+        if isTimedHold { return "\(exercise.prescribedSets) × \(exercise.repRange)" }
         return "\(exercise.prescribedSets) × \(exercise.repRange) · \(CoachEngine.repsLeftTarget(from: exercise.rpeTarget)) left"
     }
 
@@ -121,7 +126,7 @@ struct ExerciseLogCard: View {
 
     private var actionsMenu: some View {
         Menu {
-            if !exercise.isCardio {
+            if isLoaded {
                 Button { showingPlates = true } label: { Label("Plate Calculator", systemImage: "circle.hexagongrid.fill") }
             }
             Button { formMode = .edit } label: { Label("Edit Prescription", systemImage: "slider.horizontal.3") }
@@ -206,7 +211,7 @@ struct ExerciseLogCard: View {
 
             Divider().overlay(Color.hairline)
 
-            if !loggingTipSeen && !exercise.isCardio { loggingTipBanner }
+            if !loggingTipSeen && isLoaded { loggingTipBanner }
 
             VStack(spacing: DS.Spacing.xs) {
                 ForEach(Array(exercise.orderedSets.enumerated()), id: \.element.persistentModelID) { i, set in
@@ -225,7 +230,7 @@ struct ExerciseLogCard: View {
                             onDelete: { store.deleteSet(set, from: exercise) },
                             onApplyGhost: { applyGhost($0, to: set) },
                             onMetaChanged: { store.save() },
-                            onAddDropSet: exercise.isCardio ? nil : {
+                            onAddDropSet: !isLoaded ? nil : {
                                 withAnimation(DS.spring) { store.addDropSet(after: set, in: exercise) }
                             }
                         )
@@ -304,6 +309,7 @@ struct ExerciseLogCard: View {
             && (exercise.workout?.completedSetCount ?? 0) == 0
         withAnimation(DS.spring) { set.completed.toggle() }
         if set.completed {
+            set.timestamp = .now   // when it was done — the session's real length for Health
             Haptics.success()
             if isFirstCompletion, let workout = exercise.workout,
                Calendar.current.isDateInToday(workout.date) {
@@ -381,7 +387,7 @@ struct ExerciseLogCard: View {
     /// Last week's matching working set for the set at `index` (warm-ups don't consume
     /// a ghost slot, so working set N always lines up with last week's working set N).
     private func ghost(forIndex index: Int) -> LastTopSet? {
-        guard !exercise.isCardio, let lastSets = guidance?.lastSets, !lastSets.isEmpty else { return nil }
+        guard isLoaded, let lastSets = guidance?.lastSets, !lastSets.isEmpty else { return nil }
         let sets = exercise.orderedSets
         guard index < sets.count, !sets[index].isWarmup, !sets[index].isDropSet else { return nil }
         let workingIndex = sets.prefix(index + 1).filter { !$0.isWarmup && !$0.isDropSet }.count - 1
@@ -402,7 +408,7 @@ struct ExerciseLogCard: View {
     /// The previous completed working set's logged effort — powers the "same as last
     /// set" shortcut in the reps-left menu.
     private func previousRPE(forIndex index: Int) -> Double? {
-        guard !exercise.isCardio, index > 0 else { return nil }
+        guard isLoaded, index > 0 else { return nil }
         let sets = exercise.orderedSets
         let prev = sets[..<index].last { $0.completed && !$0.isWarmup }
         return prev?.rpe
@@ -414,7 +420,7 @@ struct ExerciseLogCard: View {
     /// the set just before it was completed with a logged RPE. `weight` is the
     /// suggested load (previous set's weight + the cue's delta).
     private func nextSetCue(forIndex i: Int) -> (cue: NextSetCue, weight: Double)? {
-        guard !exercise.isCardio, i > 0 else { return nil }
+        guard isLoaded, i > 0 else { return nil }
         let sets = exercise.orderedSets
         guard i < sets.count, !sets[i].completed, !sets[i].isWarmup, !sets[i].isDropSet else { return nil }
         // Anchor the cue to the last real working set — a drop set's reduced load
@@ -422,9 +428,13 @@ struct ExerciseLogCard: View {
         guard let prev = sets[..<i].last(where: { !$0.isWarmup && !$0.isDropSet }),
               prev.completed, let rpe = prev.rpe else { return nil }
         let target = CoachEngine.targetRPE(forSetIndex: i - 1, in: exercise.rpeTarget)
+        let load = LoadProfile.forExercise(named: exercise.name, isCompound: exercise.isCompound)
         let cue = CoachEngine.nextSetCue(loggedRPE: rpe, targetRPE: target, isCompound: exercise.isCompound,
-                                         holdProgression: store.readinessHoldsProgression)
-        return (cue, max(0, prev.weight + cue.weightDeltaLb))
+                                         holdProgression: store.readinessHoldsProgression,
+                                         increment: load.increment(from: prev.weight),
+                                         isBodyweight: prev.weight <= 0)
+        let next = prev.weight + cue.weightDeltaLb
+        return (cue, prev.weight > 0 ? max(load.floor, next) : 0)
     }
 
     /// Tappable cue chip: applying it sets the next set's weight to the suggestion.

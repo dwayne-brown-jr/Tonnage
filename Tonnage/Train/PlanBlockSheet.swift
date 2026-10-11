@@ -34,7 +34,8 @@ struct PlanBlockSheet: View {
         case idle
         case intro      // buildInitial only: opt-in before spending an AI call
         case loading
-        case preview(BlockPlan)
+        /// `fixes` lists what validation repaired in the AI's draft (empty when nothing).
+        case preview(BlockPlan, fixes: [String])
         case error(String)
     }
 
@@ -87,7 +88,7 @@ struct PlanBlockSheet: View {
                 switch phase {
                 case .intro:                introView
                 case .idle, .loading:       loadingView
-                case .preview(let plan):    previewView(plan)
+                case .preview(let plan, let fixes): previewView(plan, fixes: fixes)
                 case .error(let message):   errorView(message)
                 }
             }
@@ -166,11 +167,12 @@ struct PlanBlockSheet: View {
 
     // MARK: Preview
 
-    private func previewView(_ plan: BlockPlan) -> some View {
+    private func previewView(_ plan: BlockPlan, fixes: [String]) -> some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Spacing.lg) {
                     intro(plan)
+                    if !fixes.isEmpty { fixesNotice(fixes) }
                     ForEach(plan.sessions) { sessionCard($0) }
                     disclaimer
                 }
@@ -197,6 +199,32 @@ struct PlanBlockSheet: View {
         .background(Color.surfaceElevated, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
             .strokeBorder(Color.accent.opacity(0.30), lineWidth: DS.Stroke.hairline))
+    }
+
+    /// What validation changed in Coach's draft, so nothing is silently rewritten.
+    private func fixesNotice(_ fixes: [String]) -> some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Label("Adjusted \(fixes.count) thing\(fixes.count == 1 ? "" : "s") in Coach's draft",
+                  systemImage: "wrench.adjustable.fill")
+                .font(.system(.caption, weight: .heavy).width(.condensed))
+                .kerning(0.4)
+                .foregroundStyle(Color.accent)
+            ForEach(Array(fixes.prefix(6).enumerated()), id: \.offset) { _, fix in
+                Text("– \(fix)")
+                    .font(.system(.caption2))
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if fixes.count > 6 {
+                Text("…and \(fixes.count - 6) more.")
+                    .font(.system(.caption2)).foregroundStyle(Color.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DS.Spacing.md)
+        .background(Color.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+            .strokeBorder(Color.accent.opacity(0.35), lineWidth: DS.Stroke.hairline))
     }
 
     private func sessionCard(_ session: SessionPlan) -> some View {
@@ -362,11 +390,16 @@ struct PlanBlockSheet: View {
                 model: .opus,
                 maxTokens: 4096
             )
-            if let plan = CoachBlockPlanner.parse(response: text) {
-                phase = .preview(plan)
-                Haptics.selection()
-            } else {
+            guard let draft = CoachBlockPlanner.parse(response: text) else {
                 phase = .error("Coach returned an unexpected format. Tap Try Again.")
+                return
+            }
+            switch BlockPlanValidator.validate(draft) {
+            case .ok(let plan, let fixes):
+                phase = .preview(plan, fixes: fixes)
+                Haptics.selection()
+            case .rejected(let reason):
+                phase = .error("Coach's plan didn't pass the safety checks: \(reason) Tap Try Again for a new draft.")
             }
         } catch let error as CoachError {
             phase = .error(error.errorDescription ?? "Coach call failed.")
@@ -403,7 +436,8 @@ struct PlanBlockSheet: View {
     private func commit(_ plan: BlockPlan) {
         guard let program else { return }
         pendingPlan = nil
-        let plansByName = Dictionary(uniqueKeysWithValues: plan.sessions.map { ($0.name, $0) })
+        // First session wins on a duplicate name — never trap on model output.
+        let plansByName = Dictionary(plan.sessions.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
 
         for session in program.orderedSessions {
             guard let proposal = plansByName[session.name] else { continue }
@@ -428,6 +462,7 @@ struct PlanBlockSheet: View {
         do {
             try context.save()
             Haptics.success()
+            PhoneConnectivity.shared.pushContext()   // the watch runs the new sessions
             onCommit()
             dismiss()
         } catch {

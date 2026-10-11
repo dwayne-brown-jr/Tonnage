@@ -59,6 +59,71 @@ public struct ExercisePlan: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+// MARK: - Lenient decoding
+//
+// The plan is model-written, so decoding is forgiving: one bad exercise or session is
+// dropped instead of failing the whole plan, numbers may arrive as strings, and
+// optional-in-spirit fields default. `BlockPlanValidator` then enforces the real limits.
+
+extension BlockPlan {
+    private enum Keys: String, CodingKey { case blockNumber, theme, summary, sessions }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        self.init(blockNumber: c.lenientInt(.blockNumber) ?? 0,
+                  theme: (try? c.decode(String.self, forKey: .theme)) ?? "",
+                  summary: (try? c.decode(String.self, forKey: .summary)) ?? "",
+                  sessions: (try? c.decode(Lossy<SessionPlan>.self, forKey: .sessions))?.elements ?? [])
+    }
+}
+
+extension SessionPlan {
+    private enum Keys: String, CodingKey { case name, subtitle, exercises }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  subtitle: (try? c.decode(String.self, forKey: .subtitle)) ?? "",
+                  exercises: (try? c.decode(Lossy<ExercisePlan>.self, forKey: .exercises))?.elements ?? [])
+    }
+}
+
+extension ExercisePlan {
+    private enum Keys: String, CodingKey {
+        case name, prescribedSets, repRange, rpeTarget, notes, isCompound, isCardio, rationale, change
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  prescribedSets: c.lenientInt(.prescribedSets) ?? 0,
+                  repRange: c.lenientString(.repRange) ?? "",
+                  rpeTarget: c.lenientString(.rpeTarget) ?? "",
+                  notes: (try? c.decode(String.self, forKey: .notes)) ?? "",
+                  isCompound: (try? c.decode(Bool.self, forKey: .isCompound)) ?? false,
+                  isCardio: (try? c.decode(Bool.self, forKey: .isCardio)) ?? false,
+                  rationale: (try? c.decode(String.self, forKey: .rationale)) ?? "",
+                  change: (try? c.decode(PlanChange.self, forKey: .change)) ?? .new)
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// An Int, or a whole number written as a Double or a string ("4").
+    func lenientInt(_ key: Key) -> Int? {
+        if let v = try? decode(Int.self, forKey: key) { return v }
+        if let v = try? decode(Double.self, forKey: key), v == v.rounded() { return Int(v) }
+        if let s = try? decode(String.self, forKey: key) { return Int(s.trimmingCharacters(in: .whitespaces)) }
+        return nil
+    }
+
+    /// A string, or a number written bare (rpeTarget: 8).
+    func lenientString(_ key: Key) -> String? {
+        if let s = try? decode(String.self, forKey: key) { return s }
+        if let v = try? decode(Double.self, forKey: key) { return CoachEngine.fmt(v) }
+        return nil
+    }
+}
+
 /// The type of move the planner made on a given exercise — tagged on every
 /// `ExercisePlan` so the preview can show "kept / swap / new" badges.
 public enum PlanChange: Codable, Sendable, Equatable {

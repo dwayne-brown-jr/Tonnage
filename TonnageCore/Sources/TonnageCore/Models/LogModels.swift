@@ -175,6 +175,10 @@ public final class LoggedSet {
     public var note: String?
     public var timestamp: Date = Date.now
     public var sortOrder: Int = 0
+    /// Stable identity for phone ↔ watch sync, so the same set is recognised on both
+    /// sides and merged instead of duplicated. Assigned lazily on first export;
+    /// optional so existing records and CloudKit mirroring migrate cleanly.
+    public var syncID: String?
 
     public var exercise: LoggedExercise?
 

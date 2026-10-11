@@ -54,7 +54,7 @@ struct CoachView: View {
     private var modelMenu: some View {
         Menu {
             Picker("Model", selection: $modelRaw) {
-                ForEach(CoachModel.allCases) { m in Text(m.label).tag(m.rawValue) }
+                ForEach(CoachModel.available) { m in Text(m.label).tag(m.rawValue) }
             }
             if !vm.messages.isEmpty {
                 Divider()

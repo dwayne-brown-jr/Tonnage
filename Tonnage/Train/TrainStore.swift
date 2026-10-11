@@ -161,7 +161,7 @@ final class TrainStore {
         guard let context, !exercise.isCardio,
               !(exercise.sets ?? []).contains(where: { $0.isWarmup }) else { return }
         let workingWeight = (exercise.sets ?? []).filter { !$0.isWarmup }.map(\.weight).max() ?? 0
-        let steps = WarmupRamp.steps(workingWeight: workingWeight)
+        let steps = WarmupRamp.steps(workingWeight: workingWeight, barFloor: barFloor(for: exercise))
         guard !steps.isEmpty else { return }
 
         for s in (exercise.sets ?? []) { s.sortOrder += steps.count }   // make room up front
@@ -179,7 +179,18 @@ final class TrainStore {
         guard !exercise.isCardio,
               !(exercise.sets ?? []).contains(where: { $0.isWarmup }) else { return false }
         let workingWeight = (exercise.sets ?? []).filter { !$0.isWarmup }.map(\.weight).max() ?? 0
-        return !WarmupRamp.steps(workingWeight: workingWeight).isEmpty
+        return !WarmupRamp.steps(workingWeight: workingWeight, barFloor: barFloor(for: exercise)).isEmpty
+    }
+
+    /// The empty bar for barbell lifts, so ramps and back-offs never go below it.
+    private func barFloor(for exercise: LoggedExercise) -> Double? {
+        let floor = LoadProfile.forExercise(named: exercise.name, isCompound: exercise.isCompound).floor
+        return floor > 0 ? floor : nil
+    }
+
+    /// Same movement, allowing for spelling variants ("Bench Press" / "bench press").
+    static func sameExercise(_ a: String, _ b: String) -> Bool {
+        a == b || ExerciseLibrary.historyKey(for: a) == ExerciseLibrary.historyKey(for: b)
     }
 
     /// Insert a drop set right after `set`: classic ~20% back-off (plate-rounded),
@@ -190,7 +201,8 @@ final class TrainStore {
         guard let i = ordered.firstIndex(where: { $0 === set }) else { return }
         for (k, s) in ordered.enumerated() { s.sortOrder = k }          // normalize
         for s in ordered[(i + 1)...] { s.sortOrder += 1 }               // make room
-        let dropWeight = max(0, ((set.weight * 0.8) / 5).rounded() * 5)
+        let load = LoadProfile.forExercise(named: exercise.name, isCompound: exercise.isCompound)
+        let dropWeight = set.weight > 0 ? load.rounded(set.weight * 0.8) : 0
         let drop = LoggedSet(weight: dropWeight, reps: set.reps, sortOrder: i + 1)
         drop.isDropSet = true
         context.insert(drop)
@@ -223,7 +235,7 @@ final class TrainStore {
         var best = 0.0
         let all = (try? context.fetch(FetchDescriptor<LoggedWorkout>())) ?? []
         for w in all {
-            for ex in (w.exercises ?? []) where ex.name == name && !ex.isCardio {
+            for ex in (w.exercises ?? []) where Self.sameExercise(ex.name, name) && !ex.isCardio {
                 for s in (ex.sets ?? []) where s.completed && !s.isWarmup && s !== set {
                     guard s.weight > 0, s.reps > 0, s.reps <= PersonalRecords.maxRepsForReliableE1RM else { continue }
                     best = max(best, PersonalRecords.epley(weight: s.weight, reps: s.reps))
@@ -258,7 +270,7 @@ final class TrainStore {
         let order = ((w.exercises ?? []).map(\.sortOrder).max() ?? -1) + 1
         let ex = LoggedExercise(name: name, isCompound: isCompound, isCardio: isCardio, sortOrder: order,
                                 prescribedSets: sets, repRange: repRange, rpeTarget: rpeTarget, prescriptionNotes: notes)
-        ex.sets = makeSets(name: name, isCardio: isCardio, sets: sets, repRange: repRange, block: block, week: week, sessionName: w.sessionName)
+        ex.sets = makeSets(name: name, isCompound: isCompound, isCardio: isCardio, sets: sets, repRange: repRange, block: block, week: week, sessionName: w.sessionName)
         context.insert(ex)
         w.exercises = (w.exercises ?? []) + [ex]
         w.isCustomized = true
@@ -278,7 +290,7 @@ final class TrainStore {
         ex.prescribedSets = sets; ex.repRange = repRange; ex.rpeTarget = rpeTarget; ex.prescriptionNotes = notes
         if resetSets {
             for s in (ex.sets ?? []) { context.delete(s) }
-            ex.sets = makeSets(name: name, isCardio: isCardio, sets: sets, repRange: repRange, block: block, week: week, sessionName: w.sessionName)
+            ex.sets = makeSets(name: name, isCompound: isCompound, isCardio: isCardio, sets: sets, repRange: repRange, block: block, week: week, sessionName: w.sessionName)
         }
         w.isCustomized = true
         save()
@@ -397,21 +409,30 @@ final class TrainStore {
                                       prescribedSets: t.prescribedSets, repRange: t.repRange,
                                       rpeTarget: t.rpeTarget, prescriptionNotes: t.notes, exerciseTemplate: t)
         exercise.supersetWithNext = t.supersetWithNext
-        exercise.sets = makeSets(name: t.name, isCardio: t.isCardio, sets: t.prescribedSets,
+        exercise.sets = makeSets(name: t.name, isCompound: t.isCompound, isCardio: t.isCardio, sets: t.prescribedSets,
                                  repRange: t.repRange, block: block, week: week, sessionName: sessionName)
         return exercise
     }
 
-    /// Builds pre-filled sets: cardio gets one timed set; strength gets `sets` sets
-    /// pre-loaded from the Coach's Call.
-    private func makeSets(name: String, isCardio: Bool, sets: Int, repRange: String,
+    /// Builds pre-filled sets: cardio gets one timed set; timed holds get `sets` timed
+    /// sets; strength gets `sets` sets pre-loaded from the Coach's Call.
+    private func makeSets(name: String, isCompound: Bool, isCardio: Bool, sets: Int, repRange: String,
                           block: Int, week: Int, sessionName: String) -> [LoggedSet] {
         if isCardio {
             let metrics = ExerciseLibrary.metrics(for: name, isCardio: true)
             let seconds = metrics.contains(.time) ? CoachEngine.lowRep(of: repRange) * 60 : nil
             return [LoggedSet(durationSeconds: seconds, completed: false, sortOrder: 0)]
         }
-        let call = guidance(name: name, repRange: repRange, isCardio: false, block: block, week: week, sessionName: sessionName).call
+        if ExerciseLibrary.isTimedHold(name) {
+            // "30-45s" → 30 s; "1 min" → 60 s.
+            let low = CoachEngine.lowRep(of: repRange)
+            let seconds = repRange.lowercased().contains("min") ? low * 60 : low
+            return (0..<max(1, sets)).map { i in
+                LoggedSet(durationSeconds: seconds > 0 ? seconds : nil, completed: false, sortOrder: i)
+            }
+        }
+        let call = guidance(name: name, isCompound: isCompound, repRange: repRange, isCardio: false,
+                            block: block, week: week, sessionName: sessionName).call
         return (0..<max(1, sets)).map { i in
             LoggedSet(weight: call.suggestedWeight ?? 0, reps: call.suggestedReps ?? 0,
                       rpe: nil, completed: false, sortOrder: i)
@@ -421,7 +442,7 @@ final class TrainStore {
     private func rebuildGuidance(for w: LoggedWorkout, block: Int, week: Int) {
         var g: [String: ExerciseGuidance] = [:]
         for ex in (w.exercises ?? []) {
-            g[ex.name] = guidance(name: ex.name, repRange: ex.repRange,
+            g[ex.name] = guidance(name: ex.name, isCompound: ex.isCompound, repRange: ex.repRange,
                                   isCardio: ex.isCardio, block: block, week: week, sessionName: w.sessionName)
         }
         guidance = g
@@ -436,9 +457,12 @@ final class TrainStore {
         layoff = LayoffEngine.assess(workouts: all)
     }
 
-    private func guidance(name: String, repRange: String, isCardio: Bool, block: Int, week: Int, sessionName: String) -> ExerciseGuidance {
+    private func guidance(name: String, isCompound: Bool, repRange: String, isCardio: Bool,
+                          block: Int, week: Int, sessionName: String) -> ExerciseGuidance {
         let reference = lastReference(named: name, block: block, beforeWeek: week, sessionName: sessionName)
         let call = CoachEngine.call(week: week, last: reference.top, repRange: repRange, isCardio: isCardio,
+                                    isTimed: ExerciseLibrary.isTimedHold(name),
+                                    load: .forExercise(named: name, isCompound: isCompound),
                                     holdProgression: readinessHoldsProgression,
                                     forceDeload: deloadOverridden,
                                     layoff: layoff)
@@ -466,7 +490,7 @@ final class TrainStore {
                 predicate: #Predicate { $0.blockNumber == block && $0.weekNumber == prevWeek && $0.sessionName == sessionName }
             )
             guard let previous = (try? context.fetch(descriptor))?.first,
-                  let exercise = previous.exercises?.first(where: { $0.name == name }),
+                  let exercise = previous.exercises?.first(where: { Self.sameExercise($0.name, name) }),
                   let top = exercise.topSet else { return (nil, []) }
             return (LastTopSet(weight: top.weight, reps: top.reps, rpe: top.rpe, date: previous.date), ghostSets(of: exercise))
         }
@@ -479,10 +503,10 @@ final class TrainStore {
             predicate: #Predicate { $0.blockNumber == prevBlock && $0.sessionName == sessionName }
         )
         let prior = (try? context.fetch(descriptor)) ?? []
-        let tops = prior.compactMap { $0.exercises?.first(where: { $0.name == name })?.topSet }
+        let tops = prior.compactMap { $0.exercises?.first(where: { Self.sameExercise($0.name, name) })?.topSet }
         guard let best = tops.max(by: { ($0.weight, Double($0.reps)) < ($1.weight, Double($1.reps)) }) else { return (nil, []) }
         let latestWithExercise = prior.sorted { $0.date > $1.date }
-            .compactMap { $0.exercises?.first(where: { $0.name == name }) }
+            .compactMap { $0.exercises?.first(where: { Self.sameExercise($0.name, name) }) }
             .first { !ghostSets(of: $0).isEmpty }
         return (LastTopSet(weight: best.weight, reps: best.reps, rpe: best.rpe, date: best.exercise?.workout?.date),
                 latestWithExercise.map(ghostSets(of:)) ?? [])

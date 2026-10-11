@@ -113,7 +113,10 @@ struct TrainView: View {
             store.applySuggestedWeights()
         }
         .onChange(of: currentBlock) { PhoneConnectivity.shared.pushContext() }   // sync active block to watch
-        .onChange(of: week) { reload() }
+        .onChange(of: week) {
+            reload()
+            PhoneConnectivity.shared.pushContext()   // the watch's week picker follows the phone
+        }
         .onChange(of: sessionIndex) { reload() }
         .onChange(of: dayType) { old, new in
             if old == .lift && new != .lift { restDate = .now }   // each rest-logging session starts at today
@@ -494,8 +497,11 @@ struct TrainView: View {
                     // Backdated sessions: keep the Health workout on the workout's own day —
                     // start→.now would span the backdate gap, and HealthKit hard-rejects
                     // multi-day energy samples (uncatchable NSException).
-                    let start = workout.date
-                    let end = Calendar.current.isDateInToday(start) ? Date.now : start.addingTimeInterval(45 * 60)
+                    // Start at the session's own date and end after its last set, so a session
+                    // that runs past midnight keeps its day and gets its real length.
+                    let interval = workout.sessionInterval()
+                    let start = interval.start
+                    let end = interval.end
                     let meta = LiftSessionMeta(workout: workout, isDeload: week >= 5 || deloadActive)
                     let ok = await health.saveLiftingSession(start: start, end: end, meta: meta)
                     // Tell Fuel the session is done either way — the log is real even if

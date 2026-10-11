@@ -23,6 +23,11 @@ final class WatchSessionModel {
         var durationSeconds: Int? = nil
         var distanceMiles: Double? = nil
         var flights: Int? = nil
+        /// Same identity as the phone's `LoggedSet.syncID`, so the phone merges this set
+        /// into its own copy instead of adding a duplicate.
+        var syncID: String = UUID().uuidString
+        /// Logged or changed on the watch — tells the phone these values are newer.
+        var editedOnWatch: Bool = false
     }
 
     struct Exercise: Identifiable {
@@ -48,6 +53,9 @@ final class WatchSessionModel {
     var exercises: [Exercise]
     /// Session notes logged on the phone — carried through the watch round-trip.
     private let phoneNotes: String?
+    /// When the session was first logged (on either device). Sync keeps this date rather
+    /// than stamping the workout with the moment Finish was tapped.
+    let startedAt: Date
 
     /// Builds from the program template, or — when the phone already logged this
     /// session (`existing`) — from that logged state so the watch mirrors the phone.
@@ -56,6 +64,7 @@ final class WatchSessionModel {
         weekNumber = week
         sessionName = session.name
         phoneNotes = existing?.notes
+        startedAt = existing?.date ?? Date()
 
         if let existing {
             exercises = existing.exercises.map { e in
@@ -69,7 +78,7 @@ final class WatchSessionModel {
                                  isDropSet: $0.isDropSet ?? false, isAMRAP: $0.isAMRAP ?? false,
                                  note: $0.note,
                                  durationSeconds: $0.durationSeconds, distanceMiles: $0.distanceMiles,
-                                 flights: $0.flights)
+                                 flights: $0.flights, syncID: $0.id ?? UUID().uuidString)
                     },
                     supersetWithNext: e.supersetWithNext ?? false
                 )
@@ -88,9 +97,28 @@ final class WatchSessionModel {
         }
     }
 
-    var completedSets: Int { exercises.reduce(0) { $0 + $1.completedCount } }
-    var totalVolume: Double {
-        exercises.flatMap(\.sets).filter(\.completed).reduce(0) { $0 + $1.weight * Double($1.reps) }
+    /// Completed working sets — warm-ups don't count toward sets, reps or volume,
+    /// matching the phone's numbers.
+    private var workingSets: [SetEntry] {
+        exercises.flatMap(\.sets).filter { $0.completed && !$0.isWarmup }
+    }
+    var completedSets: Int { workingSets.count }
+    var totalVolume: Double { workingSets.reduce(0) { $0 + $1.weight * Double($1.reps) } }
+    var totalReps: Int { workingSets.reduce(0) { $0 + $1.reps } }
+    /// Anything at all was logged, warm-ups included — worth syncing.
+    var hasCompletedSets: Bool { exercises.contains { $0.sets.contains(where: \.completed) } }
+
+    /// Snapshot for the HealthKit workout's metadata — the same `HealthMetadataKeys` the
+    /// phone stamps, so Tonnage Fuel reads one shape whichever device logged the session.
+    var liftMeta: LiftSessionMeta {
+        let compoundTop = exercises.first(where: { $0.isCompound })?.sets
+            .filter { $0.completed && !$0.isWarmup }
+            .max { ($0.weight, Double($0.reps)) < ($1.weight, Double($1.reps)) }?.rpe
+        let rpe = compoundTop ?? exercises.flatMap(\.sets).compactMap(\.rpe).first
+        return LiftSessionMeta(sessionName: sessionName, totalVolumeLb: totalVolume,
+                               setCount: completedSets, totalReps: totalReps,
+                               block: blockNumber, week: weekNumber,
+                               isDeload: weekNumber >= 5, topSetRPE: rpe)
     }
 
     func addSet(toExerciseAt index: Int) {
@@ -101,7 +129,7 @@ final class WatchSessionModel {
 
     func payload() -> WorkoutPayload {
         WorkoutPayload(
-            blockNumber: blockNumber, weekNumber: weekNumber, sessionName: sessionName, dayType: .lift, date: Date(),
+            blockNumber: blockNumber, weekNumber: weekNumber, sessionName: sessionName, dayType: .lift, date: startedAt,
             exercises: exercises.map { e in
                 WorkoutPayload.Exercise(
                     name: e.name, isCompound: e.isCompound, isCardio: e.isCardio,
@@ -114,7 +142,7 @@ final class WatchSessionModel {
                               isAMRAP: $0.isAMRAP ? true : nil,
                               note: $0.note,
                               durationSeconds: $0.durationSeconds, distanceMiles: $0.distanceMiles,
-                              flights: $0.flights)
+                              flights: $0.flights, id: $0.syncID, editedOnWatch: $0.editedOnWatch)
                     },
                     supersetWithNext: e.supersetWithNext ? true : nil
                 )

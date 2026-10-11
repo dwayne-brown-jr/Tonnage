@@ -83,6 +83,8 @@ struct RootView: View {
             // demo data, so XCUITest smoke flows land on a populated TRAIN deterministically.
             if ProcessInfo.processInfo.arguments.contains("-uitesting") {
                 hasOnboarded = true; hasChosenSplit = true; hasAnsweredIntake = true; didEnterSetup = true
+                // A named profile, or the profile cover opens over TRAIN and blocks every tap.
+                if !ProfileStore.isComplete { UserDefaults.standard.set("UI Test", forKey: ProfileStore.Key.name) }
                 DemoData.seedTrainingData(in: modelContext)
                 await health.setDemoRecovery(true)
             }

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import WatchConnectivity
 import TonnageCore
 
@@ -17,14 +18,35 @@ final class WatchConnectivityClient: NSObject {
     /// Sessions the phone has logged for the current block (so the watch can mirror
     /// what was done on the phone). Keyed by (week, sessionName) via `loggedWorkout`.
     private(set) var loggedWorkouts: [WorkoutPayload] = []
+    /// The watch's local store — the phone's program is mirrored into it.
+    private var container: ModelContainer?
 
-    func activate() {
+    func activate(container: ModelContainer) {
+        self.container = container
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
         session.delegate = self
         session.activate()
         applyRestDefaults(session.receivedApplicationContext)   // seed from any prior context
         applyWorkouts(session.receivedApplicationContext)
+        applyProgram(session.receivedApplicationContext["program"] as? Data)
+    }
+
+    /// Mirror the phone's program so the session list matches it (split changes, AI plans).
+    private func applyProgram(_ data: Data?) {
+        guard let data, let payload = ProgramPayload.decoded(from: data),
+              let context = container?.mainContext else { return }
+        applyProgramPayload(payload, to: context)
+    }
+
+    /// Follow the phone's week when it changes, so the picker opens on the right week.
+    /// A week picked on the watch sticks until the phone moves on.
+    private func applyPhoneWeek(_ week: Int?) {
+        guard let week, (1...5).contains(week) else { return }
+        let d = UserDefaults.standard
+        guard d.object(forKey: "phone.week") as? Int != week else { return }
+        d.set(week, forKey: "phone.week")
+        d.set(week, forKey: "watch.week")
     }
 
     /// The logged workout the phone synced for a given week + session, if any.
@@ -62,6 +84,7 @@ final class WatchConnectivityClient: NSObject {
         if let c = context["rest.compound"] as? Int { UserDefaults.standard.set(c, forKey: "rest.compound") }
         if let i = context["rest.isolation"] as? Int { UserDefaults.standard.set(i, forKey: "rest.isolation") }
         if let b = context["currentBlock"] as? Int { UserDefaults.standard.set(b, forKey: "currentBlock") }
+        applyPhoneWeek(context["currentWeek"] as? Int)
     }
 }
 
@@ -85,11 +108,15 @@ extension WatchConnectivityClient: WCSessionDelegate {
         let compound = applicationContext["rest.compound"] as? Int
         let isolation = applicationContext["rest.isolation"] as? Int
         let block = applicationContext["currentBlock"] as? Int
+        let week = applicationContext["currentWeek"] as? Int
         let workoutsData = applicationContext["workouts"] as? Data
+        let programData = applicationContext["program"] as? Data
         Task { @MainActor in
             if let compound { UserDefaults.standard.set(compound, forKey: "rest.compound") }
             if let isolation { UserDefaults.standard.set(isolation, forKey: "rest.isolation") }
             if let block { UserDefaults.standard.set(block, forKey: "currentBlock") }
+            self.applyPhoneWeek(week)
+            self.applyProgram(programData)                   // the phone's real sessions
             self.setLoggedWorkouts(fromData: workoutsData)   // mirror phone-logged sessions
             self.lastSyncedAt = Date()                       // mark a fresh delivery
             WatchWidgetSync.refresh()   // keep the complication's block in step with the phone

@@ -192,6 +192,27 @@ struct BodyScanSheet: View {
 
     // MARK: Network + commit
 
+    /// The proxy rejects bodies over 1 MB, and base64 grows a JPEG by a third. Photos that
+    /// would come close are re-encoded smaller; everything else goes as-is.
+    static func uploadJPEG(_ data: Data, maxBytes: Int = 600_000) -> Data {
+        guard data.count > maxBytes, let image = UIImage(data: data) else { return data }
+        var edge: CGFloat = 1024
+        var quality: CGFloat = 0.7
+        var best = data
+        for _ in 0..<4 {
+            let scale = min(1, edge / max(image.size.width, image.size.height))
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            let resized = UIGraphicsImageRenderer(size: size).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+            if let jpeg = resized.jpegData(compressionQuality: quality) {
+                best = jpeg
+                if jpeg.count <= maxBytes { break }
+            }
+            edge *= 0.8
+            quality = max(0.5, quality - 0.1)
+        }
+        return best
+    }
+
     private func analyze() async {
         guard let route = CoachKey.route else {
             phase = .error("Add your Anthropic API key in Settings to use photo estimates.")
@@ -203,7 +224,7 @@ struct BodyScanSheet: View {
         do {
             let text = try await AnthropicClient(route: route).sendVision(
                 system: system, userText: user,
-                jpegBase64: imageData.base64EncodedString(),
+                jpegBase64: Self.uploadJPEG(imageData).base64EncodedString(),
                 model: .opus, maxTokens: 1024
             )
             guard let result = BodyScanEstimator.parse(response: text) else {

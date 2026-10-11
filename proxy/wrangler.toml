@@ -2,17 +2,29 @@ name = "tonnage-coach"
 main = "worker.js"
 compatibility_date = "2024-11-01"
 
-# Free messages per device per day (server-enforced). Override without redeploying via
-# `wrangler deploy --var DAILY_LIMIT:50` or edit here.
+# Free messages per network (IPv4 address or IPv6 /64) per day, and the per-minute burst
+# cap. Override without redeploying via `wrangler deploy --var DAILY_LIMIT:50` or edit here.
+# A value that isn't a whole number disables the shared allowance (it never means unlimited).
 [vars]
 DAILY_LIMIT = "30"
+RATE_LIMIT_PER_MINUTE = "20"
 
-# KV namespace for the per-device daily counters. Create it once with:
-#   wrangler kv namespace create QUOTA
-# then paste the returned id below (and the preview_id if you use `wrangler dev`).
+# Atomic quota + rate counters. One Durable Object per counter key; each handles one
+# request at a time, so concurrent calls can't slip past the limit.
+[[durable_objects.bindings]]
+name = "QUOTA_DO"
+class_name = "QuotaCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["QuotaCounter"]
+
+# KV namespace — only used as a fallback when QUOTA_DO isn't bound (e.g. an old deploy).
+# Created once with `wrangler kv namespace create QUOTA`.
 [[kv_namespaces]]
 binding = "QUOTA"
 id = "59500a74893248b6b8c31dd1a1fd1743"
 
-# NOTE: the Anthropic key is NOT here. Set it as a secret (never committed):
+# NOTE: secrets are NOT here. Set them with (never committed):
 #   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put APP_TOKEN

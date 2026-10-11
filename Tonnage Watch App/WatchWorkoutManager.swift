@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import TonnageCore
 
 /// Runs an `HKWorkoutSession` on the watch so heart rate streams live and the
 /// session writes to Apple Health / closes the rings. Degrades gracefully where
@@ -22,7 +23,9 @@ final class WatchWorkoutManager: NSObject {
         try? await store.requestAuthorization(toShare: share, read: read)
     }
 
-    func start() {
+    /// `meta` stamps the workout with the session's identity up front (name, block, week);
+    /// `end(meta:)` re-stamps it with the final tonnage. Tonnage Fuel reads these keys.
+    func start(meta: LiftSessionMeta? = nil) {
         guard HKHealthStore.isHealthDataAvailable(), session == nil else { return }
         let config = HKWorkoutConfiguration()
         config.activityType = .traditionalStrengthTraining
@@ -38,6 +41,7 @@ final class WatchWorkoutManager: NSObject {
             let begin = Date()
             session.startActivity(with: begin)
             builder.beginCollection(withStart: begin) { _, _ in }
+            builder.addMetadata(Self.metadata(meta)) { _, _ in }
             isRunning = true
         } catch {
             // Session couldn't start (sim / unavailable) — logging still works without HR.
@@ -45,13 +49,25 @@ final class WatchWorkoutManager: NSObject {
         }
     }
 
-    func end() {
+    /// Finish the live workout, re-stamping the final session numbers first so the saved
+    /// HealthKit workout carries real tonnage / set / rep counts rather than the empties
+    /// it started with.
+    func end(meta: LiftSessionMeta? = nil) {
         guard let session, let builder else { return }
         session.end()
-        builder.endCollection(withEnd: Date()) { _, _ in
-            builder.finishWorkout { _, _ in }
+        builder.addMetadata(Self.metadata(meta)) { _, _ in
+            builder.endCollection(withEnd: Date()) { _, _ in
+                builder.finishWorkout { _, _ in }
+            }
         }
         cleanup()
+    }
+
+    /// Brand name on every Tonnage lift workout, plus the session's custom keys when known.
+    private static func metadata(_ meta: LiftSessionMeta?) -> [String: Any] {
+        var md: [String: Any] = [HKMetadataKeyWorkoutBrandName: HealthMetadataKeys.brandName]
+        if let meta { md.merge(meta.metadata) { _, new in new } }
+        return md
     }
 
     private func cleanup() {

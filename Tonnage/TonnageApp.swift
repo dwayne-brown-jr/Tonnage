@@ -16,6 +16,7 @@ struct TonnageApp: App {
         container = TonnageStore.makeContainer(inMemory: underTests, cloudKit: !underTests)
         if !underTests {
             PhoneConnectivity.shared.activate(container: container)   // receive watch syncs
+            WidgetAutoRefresh.shared.start(container: container)      // widget follows every save
 #if canImport(MetricKit)
             MetricKitReporter.shared.start()                         // Apple-native crash/hang telemetry
 #endif
@@ -25,6 +26,7 @@ struct TonnageApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .saveFailureAlert()
                 .preferredColorScheme(.dark)
         }
         .modelContainer(container)

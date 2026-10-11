@@ -21,6 +21,14 @@ Native iOS + watchOS strength-training app with an AI progression engine that re
 - **AI runs behind a serverless proxy** — no API key ships in the app binary
 - **SwiftData + CloudKit** — offline-first with sync across devices
 
+## Building from a fresh clone
+
+`Tonnage/Secrets.swift` is gitignored. Create it from the template before the first build:
+
+```bash
+cp Secrets.swift.example Tonnage/Secrets.swift
+```
+
 ## Stack
 
 Swift 6 · SwiftUI · SwiftData + CloudKit · HealthKit · WatchKit · widgets · serverless AI proxy

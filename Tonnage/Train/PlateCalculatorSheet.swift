@@ -78,7 +78,8 @@ struct PlateCalculatorSheet: View {
             Text(CoachEngine.fmt(loadout.achievable))
                 .font(DSFont.numberXL)
                 .foregroundStyle(loadout.isExact ? Color.accent : Color.textPrimary)
-            Text(loadout.isExact ? "loaded · per bar" : "closest below \(CoachEngine.fmt(target))")
+            Text(loadout.isBelowBar ? "empty bar (\(CoachEngine.fmt(bar))) · lighter than the bar"
+                 : loadout.isExact ? "loaded · per bar" : "closest below \(CoachEngine.fmt(target))")
                 .font(.system(.caption, weight: .medium))
                 .foregroundStyle(Color.textTertiary)
 
@@ -135,7 +136,11 @@ struct PlateCalculatorSheet: View {
                     .padding(.vertical, DS.Spacing.xs)
                 }
             }
-            if !loadout.isExact {
+            if loadout.isBelowBar {
+                Text("\(CoachEngine.fmt(target)) lb is lighter than the \(CoachEngine.fmt(bar)) lb bar. Use the empty bar or a lighter one.")
+                    .font(.system(.caption))
+                    .foregroundStyle(Color.textTertiary)
+            } else if !loadout.isExact {
                 Text("\(CoachEngine.fmt(loadout.remainderPerSide * 2)) lb short of target with standard plates.")
                     .font(.system(.caption))
                     .foregroundStyle(Color.textTertiary)

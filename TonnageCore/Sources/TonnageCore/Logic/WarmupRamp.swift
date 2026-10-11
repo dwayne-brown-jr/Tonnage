@@ -20,7 +20,24 @@ public enum WarmupRamp {
     /// 40% × 8 → 60% × 5 → 80% × 3. Light working weights get a single 50% × 8;
     /// anything under 20 lb needs no ramp at all. Steps that round into each other
     /// or up to the working weight are dropped.
-    public static func steps(workingWeight: Double) -> [Step] {
+    ///
+    /// `barFloor` (the empty bar, for barbell lifts) is the lightest step: anything that
+    /// would land below it becomes "empty bar × 10", and a working weight at or under
+    /// the bar gets no ramp.
+    public static func steps(workingWeight: Double, barFloor: Double? = nil) -> [Step] {
+        guard let bar = barFloor, bar > 0 else { return percentSteps(workingWeight: workingWeight) }
+        guard workingWeight > bar else { return [] }
+        var result: [Step] = []
+        for step in percentSteps(workingWeight: workingWeight) {
+            let s = step.weight < bar ? Step(weight: bar, reps: 10) : step
+            guard result.last?.weight != s.weight else { continue }
+            result.append(s)
+        }
+        if result.isEmpty { result = [Step(weight: bar, reps: 10)] }
+        return result
+    }
+
+    private static func percentSteps(workingWeight: Double) -> [Step] {
         guard workingWeight >= 20 else { return [] }
         guard workingWeight >= 50 else {
             let w = round5(workingWeight * 0.5)

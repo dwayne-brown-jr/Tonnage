@@ -212,23 +212,47 @@ struct RootView: View {
 
     private var tabs: some View {
         TabView(selection: $selection) {
-            Tab("Train", systemImage: "dumbbell.fill", value: .train) {
+            Tab(value: .train) {
                 TrainView()
+            } label: {
+                Label { Text("Train") } icon: { Image.tabIcon("dumbbell.fill") }
             }
-            Tab("Coach", systemImage: "bubble.left.and.text.bubble.right.fill", value: .coach) {
+            Tab(value: .coach) {
                 CoachView()
+            } label: {
+                Label { Text("Coach") } icon: { Image.tabIcon("bubble.left.and.text.bubble.right.fill") }
             }
-            Tab("Move", systemImage: "figure.walk", value: .move) {
+            Tab(value: .move) {
                 MoveView()
+            } label: {
+                Label { Text("Move") } icon: { Image.tabIcon("figure.walk") }
             }
-            Tab("Data", systemImage: "chart.xyaxis.line", value: .data) {
+            Tab(value: .data) {
                 DataView()
+            } label: {
+                Label { Text("Data") } icon: { Image.tabIcon("chart.xyaxis.line") }
             }
-            Tab("Settings", systemImage: "gearshape.fill", value: .settings) {
+            Tab(value: .settings) {
                 SettingsView()
+            } label: {
+                Label { Text("Settings") } icon: { Image.tabIcon("gearshape.fill") }
             }
         }
         .tint(.accent)
+    }
+}
+
+private extension Image {
+    /// Tab-bar glyph at a fixed, smaller size. The iOS 26 tab bar re-sizes SF Symbols to its
+    /// own (large) default and ignores font/scale modifiers, so render the symbol into a
+    /// template bitmap it displays as-is — the tab tint still applies.
+    static func tabIcon(_ name: String, pointSize: CGFloat = 15) -> Image {
+        let config = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        guard let symbol = UIImage(systemName: name, withConfiguration: config) else {
+            return Image(systemName: name)
+        }
+        let bitmap = UIGraphicsImageRenderer(size: symbol.size).image { _ in symbol.draw(at: .zero) }
+        return Image(uiImage: bitmap.withRenderingMode(.alwaysTemplate))
     }
 }
 

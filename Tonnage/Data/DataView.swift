@@ -61,6 +61,11 @@ struct DataView: View {
                         if hasData {
                             headline
                             highlights
+                            if !tickerItems.isEmpty {
+                                // Full-bleed: runs edge to edge past the screen margin.
+                                TickerBand(items: tickerItems)
+                                    .padding(.horizontal, -DS.Spacing.screen)
+                            }
                         }
                         if hasRecentDays { weekStripCard }
                         if hasData {
@@ -284,6 +289,23 @@ struct DataView: View {
     /// keeps the lifetime feed).
     private var blockPRs: [PRMoment] {
         PersonalRecords.recentPRs(in: workouts, limit: 500).filter { $0.blockNumber == currentBlock }
+    }
+
+    // MARK: Ticker
+
+    /// The block's wins for the ticker band: each lift's gain (biggest first), then PRs and
+    /// sessions. Empty — so no band — until some lift has actually gone up.
+    private var tickerItems: [String] {
+        let gains = BlockProgress.liftGains(from: workouts, block: currentBlock)
+        guard !gains.isEmpty else { return [] }
+        var items = gains.map { g -> String in
+            var name = g.name
+            if name.hasPrefix("Barbell ") { name.removeFirst("Barbell ".count) }
+            return "\(name.uppercased()) +\(CoachEngine.fmt(g.gainLb)) LB"
+        }
+        if !blockPRs.isEmpty { items.append("\(blockPRs.count) PR\(blockPRs.count == 1 ? "" : "S")") }
+        if sessionsPerWeek > 0 { items.append("\(adherence.sessionsCompleted)/\(adherence.sessionsPlanned) SESSIONS") }
+        return items
     }
 
     // MARK: Highlights

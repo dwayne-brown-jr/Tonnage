@@ -365,6 +365,12 @@ struct SettingsView: View {
             } else if health.hasRequested {
                 recoveryReadout
                 connectButton(title: "Refresh from Health")
+                if let at = health.lastRefreshedAt {
+                    Text(refreshSummary(at))
+                        .font(.system(.caption2, weight: .medium))
+                        .foregroundStyle(health.foundSignals.isEmpty ? Color.danger : Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("Reads bodyweight, sleep, HRV, resting heart rate, and — from a ring — body temperature & breathing rate; writes your workouts back. Cardio (runs, walks, rides) from other apps imports into MOVE automatically. Strength workouts logged in other apps are NOT imported — log lifts in TRAIN so they count toward progression. Recovery needs an Apple Watch or ring.")
                     .font(.system(.caption2))
                     .foregroundStyle(Color.textTertiary)
@@ -412,13 +418,31 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// "Updated 7:31 PM · found HRV, resting HR, sleep · missing temperature, breathing rate".
+    private func refreshSummary(_ at: Date) -> String {
+        let all = ["HRV", "resting HR", "sleep", "temperature", "breathing rate"]
+        let found = health.foundSignals
+        var s = "Updated \(at.formatted(date: .omitted, time: .shortened))"
+        s += found.isEmpty ? " · no recovery data found in Health" : " · found \(found.joined(separator: ", "))"
+        let missing = all.filter { !found.contains($0) }
+        if !found.isEmpty && !missing.isEmpty { s += " · missing \(missing.joined(separator: ", "))" }
+        return s
+    }
+
     private func connectButton(title: String) -> some View {
         Button {
             connecting = true
             Task {
-                await health.requestAuthorization()
+                // Already connected → just re-read (asking again only matters for new types).
+                if health.hasRequested {
+                    await health.upgradeAuthorizationIfNeeded()
+                    await health.refresh()
+                } else {
+                    await health.requestAuthorization()
+                }
                 await health.importExternalWorkouts(into: modelContext)
                 connecting = false
+                Haptics.success()
             }
         } label: {
             HStack(spacing: DS.Spacing.sm) {

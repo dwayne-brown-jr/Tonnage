@@ -15,19 +15,19 @@ struct TonnageHeader<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(DSFont.screenTitle)
-                .foregroundStyle(Color.textPrimary)
-            Spacer(minLength: DS.Spacing.sm)
-            trailing()
-        }
-        .padding(.horizontal, DS.Spacing.screen)
-        .padding(.top, DS.Spacing.sm)
-        .padding(.bottom, DS.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Same solid surface as the page, like TRAIN's header: no grey band or divider,
-        // and content scrolling underneath stays hidden behind the title.
-        .background(Color.surface)
+        Text(title)
+            .font(DSFont.screenTitle)
+            .foregroundStyle(Color.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The accessory floats over the right edge, centered on the title, so its size
+            // (a pill on Coach, a round button on Data) can never move the title — every
+            // tab's title sits in exactly the same spot.
+            .overlay(alignment: .trailing) { trailing() }
+            .padding(.horizontal, DS.Spacing.screen)
+            .padding(.top, DS.Spacing.sm)
+            .padding(.bottom, DS.Spacing.md)
+            // Same solid surface as the page, like TRAIN's header: no grey band or divider,
+            // and content scrolling underneath stays hidden behind the title.
+            .background(Color.surface)
     }
 }

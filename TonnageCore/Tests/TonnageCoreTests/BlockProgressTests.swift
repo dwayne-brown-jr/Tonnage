@@ -64,3 +64,29 @@ struct BlockProgressTests {
         #expect(p.barFraction(p.weeks[3]) == 0)
     }
 }
+
+@Suite("Block lift gains (DATA ticker)")
+struct LiftGainsTests {
+
+    private func workout(week: Int, block: Int = 1, _ lifts: [(String, Double)]) -> LoggedWorkout {
+        let w = LoggedWorkout(date: .now, blockNumber: block, weekNumber: week, dayType: .lift, sessionName: "S")
+        w.exercises = lifts.enumerated().map { i, l in
+            let ex = LoggedExercise(name: l.0, isCompound: true, sortOrder: i)
+            ex.sets = [LoggedSet(weight: l.1, reps: 5, completed: true, sortOrder: 0)]
+            return ex
+        }
+        return w
+    }
+
+    @Test("Gains are best build week minus first week, biggest first, losers and bodyweight left out")
+    func gains() {
+        let ws = [workout(week: 1, [("Barbell Bench Press", 135), ("Barbell Back Squat", 185), ("DB Curl", 30), ("Push-up", 0)]),
+                  workout(week: 2, [("Barbell Bench Press", 140), ("Barbell Back Squat", 205), ("DB Curl", 25), ("Push-up", 0)]),
+                  workout(week: 3, [("Barbell Bench Press", 145)]),
+                  workout(week: 5, [("Barbell Back Squat", 400)]),               // deload week ignored
+                  workout(week: 2, block: 2, [("Barbell Bench Press", 300)])]   // other block ignored
+        let g = BlockProgress.liftGains(from: ws, block: 1)
+        #expect(g.map(\.name) == ["Barbell Back Squat", "Barbell Bench Press"])
+        #expect(g.map(\.gainLb) == [20, 10])
+    }
+}

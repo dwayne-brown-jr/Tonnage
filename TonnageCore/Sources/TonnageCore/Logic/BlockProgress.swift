@@ -91,3 +91,34 @@ public struct BlockProgress: Equatable, Sendable {
         return BlockProgress(weeks: weeks, currentWeek: currentWeek)
     }
 }
+
+public extension BlockProgress {
+
+    /// One lift's gain this block, for the DATA ticker.
+    struct LiftGain: Equatable, Sendable {
+        public let name: String
+        public let gainLb: Double
+    }
+
+    /// Every lift that's gone up this block, biggest gain first: the best top set in weeks
+    /// 1–4 minus the first logged week's, per lift (spelling variants merged, sessions
+    /// combined). Bodyweight and cardio work is left out.
+    static func liftGains(from workouts: [LoggedWorkout], block: Int, limit: Int = 8) -> [LiftGain] {
+        var byLift: [String: (name: String, weeks: [Int: Double])] = [:]
+        for w in workouts where w.blockNumber == block && (1...4).contains(w.weekNumber) {
+            for ex in w.exercises ?? [] where !ex.isCardio {
+                guard let top = ex.topSet, top.weight > 0 else { continue }
+                let key = ExerciseLibrary.historyKey(for: ex.name)
+                var entry = byLift[key] ?? (ExerciseLibrary.canonicalDisplayName(for: ex.name), [:])
+                entry.weeks[w.weekNumber] = max(entry.weeks[w.weekNumber] ?? 0, top.weight)
+                byLift[key] = entry
+            }
+        }
+        let gains: [LiftGain] = byLift.values.compactMap { entry in
+            guard entry.weeks.count >= 2, let firstWeek = entry.weeks.keys.min(),
+                  let first = entry.weeks[firstWeek], let best = entry.weeks.values.max(), best > first else { return nil }
+            return LiftGain(name: entry.name, gainLb: best - first)
+        }
+        return Array(gains.sorted { ($0.gainLb, $1.name) > ($1.gainLb, $0.name) }.prefix(limit))
+    }
+}
